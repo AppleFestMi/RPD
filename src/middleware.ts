@@ -43,7 +43,9 @@ export async function middleware(req: NextRequest) {
   }
 
   // CSP nonce — generated per request, propagated to RSC via header.
-  const nonce = base64url(crypto.getRandomValues(new Uint8Array(16)));
+  // Use globalThis.crypto (Web Crypto) explicitly. Edge runtime exposes
+  // it; Node 20 does too. This is NOT the Node 'crypto' module.
+  const nonce = base64url(globalThis.crypto.getRandomValues(new Uint8Array(16)));
 
   // Forward request ID, nonce, and current pathname to the application.
   // The pathname header lets the (authed) layout decide whether to redirect
