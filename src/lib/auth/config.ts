@@ -1,12 +1,18 @@
 /**
  * Auth.js v5 configuration.
  *
- * - Credentials provider for local email/password (MVP).
- * - Prisma adapter for database-backed sessions.
- * - Account lockout on repeated failure (User.failedLoginCount + lockedUntil).
- * - All four outcomes (success, failure, lockout triggered, lockout expired)
- *   are audit-logged.
- * - The shape is OIDC-ready: add a Provider to the array when SSO is wired.
+ * Login flow (single-step):
+ *   - User submits email + password + (optional) MFA code in one form.
+ *   - authorize() verifies password.
+ *   - If user has MFA enabled, the code is required:
+ *       * 6-digit numeric → verified as TOTP against decrypted secret
+ *       * AAAA-BBBB-CCCC  → verified as a backup code (single-use)
+ *   - All four outcomes (success, password failure, MFA failure, lockout)
+ *     are audit-logged.
+ *
+ * Account lockout is on password failure. MFA failure does NOT increment the
+ * password-failure counter (separate concern; we audit-log it instead). A
+ * future revision may add an MFA-specific limiter.
  */
 import "server-only";
 import NextAuth, { type NextAuthConfig } from "next-auth";
@@ -17,12 +23,18 @@ import { prisma } from "@/lib/db";
 import { verifyPassword } from "@/lib/security/password";
 import { auditLog } from "@/lib/audit/audit";
 import { EVENTS } from "@/lib/audit/events";
+import {
+  consumeBackupCode,
+  looksLikeBackupCode,
+  verifyTotpForUser,
+} from "@/lib/auth/mfa";
 
 const LOGIN_SCHEMA = z.object({
   email: z.string().email().max(254),
   password: z.string().min(1).max(256),
-  // MFA code is optional in the schema; required at runtime if user has MFA on.
-  mfaCode: z.string().regex(/^\d{6}$/).optional(),
+  // Either a 6-digit TOTP or a hyphenated backup code; validated for shape
+  // here, contents verified after we know if MFA is required.
+  mfaCode: z.string().max(64).optional().default(""),
 });
 
 const MAX_FAILS = 5;
@@ -52,6 +64,9 @@ export const authConfig: NextAuthConfig = {
         mfaCode: { label: "MFA code", type: "text" },
       },
       async authorize(rawCredentials, req) {
+        const ip = extractIp(req);
+        const userAgent = req?.headers?.get?.("user-agent") ?? null;
+
         const parsed = LOGIN_SCHEMA.safeParse(rawCredentials);
         if (!parsed.success) {
           await auditLog({
@@ -59,8 +74,8 @@ export const authConfig: NextAuthConfig = {
             eventType: EVENTS.AUTH_LOGIN_FAILURE,
             action: "login",
             result: "failure",
-            ip: extractIp(req),
-            userAgent: req?.headers?.get?.("user-agent") ?? null,
+            ip,
+            userAgent,
             metadata: { reason: "invalid_payload" },
           });
           return null;
@@ -69,35 +84,42 @@ export const authConfig: NextAuthConfig = {
         const lower = email.toLowerCase();
 
         const user = await prisma.user.findUnique({ where: { email: lower } });
-        if (!user || user.disabledAt) {
+        if (!user || user.disabledAt || !user.activatedAt) {
           await auditLog({
-            actor: { userId: null },
+            actor: { userId: user?.id ?? null },
             eventType: EVENTS.AUTH_LOGIN_FAILURE,
             action: "login",
             result: "failure",
-            ip: extractIp(req),
-            userAgent: req?.headers?.get?.("user-agent") ?? null,
-            metadata: { reason: user ? "disabled" : "no_such_user" },
+            ip,
+            userAgent,
+            metadata: {
+              reason: !user
+                ? "no_such_user"
+                : user.disabledAt
+                  ? "disabled"
+                  : "not_activated",
+            },
           });
           return null;
         }
 
-        // Lockout window check
+        // Lockout check (password-failure-driven).
         if (user.lockedUntil && user.lockedUntil > new Date()) {
           await auditLog({
             actor: { userId: user.id },
             eventType: EVENTS.AUTH_LOGIN_FAILURE,
             action: "login",
             result: "denied",
-            ip: extractIp(req),
-            userAgent: req?.headers?.get?.("user-agent") ?? null,
+            ip,
+            userAgent,
             metadata: { reason: "locked", lockedUntil: user.lockedUntil.toISOString() },
           });
           return null;
         }
 
-        const ok = await verifyPassword(user.passwordHash, password);
-        if (!ok) {
+        // Password verification.
+        const passwordOk = await verifyPassword(user.passwordHash, password);
+        if (!passwordOk) {
           const newFails = user.failedLoginCount + 1;
           const triggerLock = newFails >= MAX_FAILS;
           await prisma.user.update({
@@ -112,8 +134,8 @@ export const authConfig: NextAuthConfig = {
             eventType: EVENTS.AUTH_LOGIN_FAILURE,
             action: "login",
             result: "failure",
-            ip: extractIp(req),
-            userAgent: req?.headers?.get?.("user-agent") ?? null,
+            ip,
+            userAgent,
             metadata: { reason: "wrong_password", failures: newFails },
           });
           if (triggerLock) {
@@ -122,43 +144,101 @@ export const authConfig: NextAuthConfig = {
               eventType: EVENTS.AUTH_LOCKOUT_TRIGGERED,
               action: "lockout",
               result: "success",
-              ip: extractIp(req),
-              userAgent: req?.headers?.get?.("user-agent") ?? null,
+              ip,
+              userAgent,
               metadata: { lockoutMs: LOCKOUT_MS },
             });
           }
           return null;
         }
 
-        // MFA: if enrolled, require code.
+        // MFA gate.
         if (user.mfaEnabled) {
-          if (!mfaCode) {
-            // Special-case sentinel — the UI re-prompts; do not lock.
+          if (!user.mfaSecretEncrypted) {
+            // Shouldn't happen — defensive. Audit and refuse.
+            await auditLog({
+              actor: { userId: user.id },
+              eventType: EVENTS.AUTH_MFA_CHALLENGE_FAILURE,
+              action: "challenge",
+              result: "failure",
+              ip,
+              userAgent,
+              metadata: { reason: "missing_secret" },
+            });
             return null;
           }
-          // TODO(MFA): verify TOTP using user.mfaSecretEncrypted decoded with
-          // MFA_ENCRYPTION_KEY. Implementation lands in a follow-up commit.
-          // For now, refuse if MFA is enabled but the verifier isn't wired.
+          if (!mfaCode) {
+            await auditLog({
+              actor: { userId: user.id },
+              eventType: EVENTS.AUTH_MFA_CHALLENGE_FAILURE,
+              action: "challenge",
+              result: "failure",
+              ip,
+              userAgent,
+              metadata: { reason: "missing_code" },
+            });
+            return null;
+          }
+
+          let mfaOk = false;
+          if (looksLikeBackupCode(mfaCode)) {
+            const consumedId = await consumeBackupCode(user.id, mfaCode, ip);
+            mfaOk = consumedId !== null;
+            if (mfaOk) {
+              await auditLog({
+                actor: { userId: user.id },
+                eventType: EVENTS.AUTH_BACKUP_CODE_USED,
+                action: "use",
+                result: "success",
+                ip,
+                userAgent,
+                metadata: { backupCodeId: consumedId },
+              });
+            } else {
+              await auditLog({
+                actor: { userId: user.id },
+                eventType: EVENTS.AUTH_BACKUP_CODE_FAILURE,
+                action: "use",
+                result: "failure",
+                ip,
+                userAgent,
+              });
+            }
+          } else {
+            mfaOk = verifyTotpForUser(user.mfaSecretEncrypted, mfaCode);
+          }
+
+          if (!mfaOk) {
+            await auditLog({
+              actor: { userId: user.id },
+              eventType: EVENTS.AUTH_MFA_CHALLENGE_FAILURE,
+              action: "challenge",
+              result: "failure",
+              ip,
+              userAgent,
+              metadata: { reason: "wrong_code" },
+            });
+            return null;
+          }
+
           await auditLog({
             actor: { userId: user.id },
-            eventType: EVENTS.AUTH_LOGIN_FAILURE,
-            action: "login",
-            result: "failure",
-            ip: extractIp(req),
-            userAgent: req?.headers?.get?.("user-agent") ?? null,
-            metadata: { reason: "mfa_not_implemented" },
+            eventType: EVENTS.AUTH_MFA_CHALLENGE_SUCCESS,
+            action: "challenge",
+            result: "success",
+            ip,
+            userAgent,
           });
-          return null;
         }
 
-        // Success path
+        // Success path.
         await prisma.user.update({
           where: { id: user.id },
           data: {
             failedLoginCount: 0,
             lockedUntil: null,
             lastLoginAt: new Date(),
-            lastLoginIp: extractIp(req),
+            lastLoginIp: ip,
           },
         });
         await auditLog({
@@ -166,19 +246,15 @@ export const authConfig: NextAuthConfig = {
           eventType: EVENTS.AUTH_LOGIN_SUCCESS,
           action: "login",
           result: "success",
-          ip: extractIp(req),
-          userAgent: req?.headers?.get?.("user-agent") ?? null,
+          ip,
+          userAgent,
         });
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-        };
+        return { id: user.id, email: user.email, name: user.name };
       },
     }),
-    // FUTURE: add OIDC/SAML providers here. The session strategy stays "database"
-    // so admin can revoke sessions regardless of provider.
+    // FUTURE: OIDC/SAML providers can be added here. The session strategy stays
+    // "database" so admin can revoke sessions regardless of provider.
   ],
   callbacks: {
     async session({ session, user }) {

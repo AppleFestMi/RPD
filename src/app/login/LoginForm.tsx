@@ -21,25 +21,26 @@ export function LoginForm({
         const fd = new FormData(e.currentTarget);
         const email = String(fd.get("email") ?? "");
         const password = String(fd.get("password") ?? "");
+        const mfaCode = String(fd.get("mfaCode") ?? "");
         startTransition(async () => {
           setError(null);
           const res = await signIn("credentials", {
             email,
             password,
+            mfaCode,
             redirect: false,
           });
           if (!res || res.error) {
             // Generic message — never tell the client *why* it failed.
-            setError("Sign-in failed. Check your email and password.");
+            setError("Sign-in failed. Check your email, password, and MFA code.");
             return;
           }
-          // Manual redirect (we ran with redirect:false to control errors).
           window.location.assign(callbackUrl);
         });
       }}
     >
       <label className="block">
-        <span className="block text-xs text-text3">Email</span>
+        <span className="block text-xs text-white/70">Email</span>
         <input
           name="email"
           type="email"
@@ -49,14 +50,28 @@ export function LoginForm({
         />
       </label>
       <label className="block">
-        <span className="block text-xs text-text3">Password</span>
+        <span className="block text-xs text-white/70">Password</span>
         <input
           name="password"
           type="password"
           autoComplete="current-password"
           required
-          minLength={1}
           className="mt-1 w-full rounded-md border border-white/10 bg-navy-ink/70 px-3 py-2 text-white outline-none focus:border-accent"
+        />
+      </label>
+      <label className="block">
+        <span className="block text-xs text-white/70">
+          MFA code <span className="text-white/40">(if enrolled)</span>
+        </span>
+        <input
+          name="mfaCode"
+          type="text"
+          inputMode="text"
+          autoComplete="one-time-code"
+          spellCheck={false}
+          maxLength={20}
+          placeholder="123456 or AAAA-BBBB-CCCC"
+          className="mt-1 w-full rounded-md border border-white/10 bg-navy-ink/70 px-3 py-2 text-white font-mono tracking-wide outline-none focus:border-accent"
         />
       </label>
 

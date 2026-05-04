@@ -74,10 +74,12 @@ See [`DATA_BOUNDARIES.md`](DATA_BOUNDARIES.md) for the prohibited-data list and 
 
 ### 3.3 Multi-factor authentication
 
-- Schema includes `mfaEnabled`, `mfaSecret` (encrypted at rest), and `mfaBackupCodes` (hashed) on `User`.
-- MFA is **required** for: SystemAdmin, Admin, CommandStaff, AuditorReadOnly.
-- MFA is **strongly encouraged** for all other roles and may be made required by department policy.
-- Recovery: backup codes are issued at MFA setup, single-use, and hashed before storage. SystemAdmin can reset MFA for a user; that action is audit-logged with the actor and target.
+- Schema: `User.mfaEnabled`, `User.mfaSecretEncrypted` (AES-256-GCM, envelope key from `MFA_ENCRYPTION_KEY`), `User.mfaVerifiedAt`, `User.mfaResetAt`. Backup codes live in their own table (`BackupCode`), one row per code, with `usedAt` so a single burnt code is forensically distinguishable.
+- MFA is **required** for: `systemAdmin`, `admin`, `commandStaff`, `auditorReadOnly`. The list is enforced by `MFA_REQUIRED_ROLES` in `src/lib/auth/policy.ts` and gated in `src/app/(authed)/layout.tsx`.
+- MFA is **available but optional** for `officer`, `reserveOfficer`, `dispatcher`, `supervisor`. A future change can make it mandatory by adding the role key to `MFA_REQUIRED_ROLES`.
+- Setup flow: user lands on `/setup/mfa`, scans an `otpauth://` QR or enters the base32 secret manually, verifies with a 6-digit TOTP. On verify, the secret is re-encrypted (the in-memory plaintext is dropped), `mfaEnabled` flips, and ten backup codes are generated, hashed (Argon2id), and shown to the user **once**.
+- Login: a single form takes email + password + (TOTP or backup code). The Credentials provider verifies password, then — if MFA is enabled — verifies the TOTP or consumes a backup code. Backup codes are recognised by their `AAAA-BBBB-CCCC` shape.
+- Reset: a SystemAdmin (`admin.mfa.reset` permission) can reset another user's MFA. The action requires typing the target user's email as a confirmation (re-authentication is a future commit), invalidates the secret + all backup codes, revokes the user's sessions, and emits `auth.mfa.reset_by_admin`.
 
 ### 3.4 Sessions
 
@@ -228,9 +230,11 @@ Summary:
 
 ## 10. Account lifecycle
 
-- Users are **invited**, not self-registered. An admin creates the account and the user activates via a one-time link emailed to a department-controlled mailbox.
-- Activation requires setting a password and (for MFA-required roles) enrolling MFA.
-- Termination: SystemAdmin sets `disabledAt`. The user can no longer log in; their historical actions remain in audit logs. Records they own (requests, schedules) are retained; the user's DirectoryProfile is hidden from non-admin views.
+- Users are **invited**, not self-registered. An admin with `admin.users.manage` creates the account at `/admin/users/new`. The system mints a one-time activation token (32 random bytes, base64url, SHA-256-hashed at rest) and renders the activation URL once for the admin to copy. **SMTP is not yet wired** — admins distribute the URL via department email or in person until email is configured.
+- Activation requires setting a password (Argon2id, validated against the policy in §3.2) and acknowledging the boundary statement. Tokens are single-use and expire in 7 days. Expired or used tokens render an error and emit `user.activation.failed`.
+- Force-reset: when `User.forcePasswordReset = true`, the `(authed)` layout redirects to `/setup/password` until the user supplies their current password and a fresh password that passes policy. Sessions are revoked when an admin sets the flag, so the user must re-login first.
+- MFA enrollment is enforced after activation (or on subsequent login) for MFA-required roles via the same `(authed)` layout gate.
+- Termination: an admin sets `disabledAt`. The user can no longer log in (audit-logged as `auth.login.failure` with `reason: disabled`); existing sessions are revoked. Historical actions remain in audit logs. Records they own (requests, schedules) are retained; their DirectoryProfile is hidden from non-admin views.
 - Hard delete of a user is **not supported** through the app UI. Removal of personal data on legitimate request is handled out-of-band by SystemAdmin per the department's record-retention policy.
 
 ---

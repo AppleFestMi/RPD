@@ -45,10 +45,13 @@ export async function middleware(req: NextRequest) {
   // CSP nonce — generated per request, propagated to RSC via header.
   const nonce = base64url(crypto.getRandomValues(new Uint8Array(16)));
 
-  // Forward request ID + nonce to the application.
+  // Forward request ID, nonce, and current pathname to the application.
+  // The pathname header lets the (authed) layout decide whether to redirect
+  // to a setup route or let a setup route render — without looping.
   const fwd = new Headers(req.headers);
   fwd.set("x-request-id", requestId);
   fwd.set("x-csp-nonce", nonce);
+  fwd.set("x-pathname", url.pathname);
 
   const res = NextResponse.next({ request: { headers: fwd } });
   res.headers.set("x-request-id", requestId);

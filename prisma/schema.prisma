@@ -33,8 +33,11 @@ model User {
 
   // MFA. Secret is encrypted at rest (envelope-encrypted via MFA_ENCRYPTION_KEY).
   mfaEnabled          Boolean   @default(false)
-  mfaSecretEncrypted  String?   // base64(ciphertext)
-  mfaBackupCodesHash  String[]  @default([]) // argon2 hashes of single-use codes
+  mfaSecretEncrypted  String?   // base64(ciphertext) — never expose after setup
+  mfaVerifiedAt       DateTime? // first successful TOTP verify during enrollment
+  mfaResetAt          DateTime? // last admin reset (for ops review)
+  backupCodes         BackupCode[]
+  invitations         UserInvitation[]
 
   // Lifecycle / lockout
   disabledAt          DateTime?
@@ -131,6 +134,46 @@ model RolePermission {
 
   @@id([roleId, permissionId])
   @@index([permissionId])
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// MFA backup codes — one row per code, marked used independently
+// ─────────────────────────────────────────────────────────────────────
+
+model BackupCode {
+  id        String    @id @default(cuid())
+  userId    String
+  // Argon2id hash of the plaintext code (e.g. "ABCD-EFGH-IJ").
+  codeHash  String
+  createdAt DateTime  @default(now())
+  usedAt    DateTime?
+  usedIp    String?
+
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, usedAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// User invitation / activation tokens — opaque, hashed at rest
+// ─────────────────────────────────────────────────────────────────────
+
+model UserInvitation {
+  id          String    @id @default(cuid())
+  userId      String
+  // SHA-256 hex of the issued token. The plaintext token only exists
+  // in the URL handed to the invited user; never persisted.
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  invitedById String
+  createdAt   DateTime  @default(now())
+
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────

@@ -67,13 +67,24 @@ This is the initial set. Adding an event is a code change in `src/lib/audit/even
 | Event | When |
 | --- | --- |
 | `auth.login.success` | A user completes login (post-MFA if required) |
-| `auth.login.failure` | Wrong password, missing user, MFA failed |
+| `auth.login.failure` | Wrong password, missing/disabled/unactivated user, missing-MFA-code, locked |
 | `auth.logout` | User logs out, or session is revoked |
 | `auth.lockout.triggered` | Account locked after too many failures |
 | `auth.lockout.expired` | Lockout window passed |
-| `auth.mfa.enrolled` | User enrolled MFA |
-| `auth.mfa.reset` | SystemAdmin reset MFA for a user |
+| `auth.mfa.setup.started` | User initiated MFA enrollment |
+| `auth.mfa.setup.completed` | User verified the first TOTP and MFA was enabled |
+| `auth.mfa.challenge.success` | TOTP/backup verified during login |
+| `auth.mfa.challenge.failure` | TOTP wrong or missing during login or enrollment |
+| `auth.mfa.disabled` | User-initiated MFA removal (future flow) |
+| `auth.mfa.reset_by_admin` | SystemAdmin reset MFA for a user |
+| `auth.backup_codes.generated` | Backup codes generated at MFA enrollment |
+| `auth.backup_code.used` | A backup code was successfully consumed |
+| `auth.backup_code.failure` | A backup-code-shaped input did not match any unused code |
+| `auth.backup_codes.regenerated` | A user regenerated their backup codes |
 | `auth.password.changed` | User changed their own password |
+| `auth.password_reset.required` | The /setup/password page was reached |
+| `auth.password_reset.success` | Force-reset completed |
+| `auth.password_reset.failure` | Force-reset rejected (wrong current password, weak new password, reuse) |
 | `auth.password.resetForced` | Admin set `forcePasswordReset` |
 | `auth.session.revoked` | Admin revoked a user's session(s) |
 
@@ -88,9 +99,12 @@ This is the initial set. Adding an event is a code change in `src/lib/audit/even
 | Event | When |
 | --- | --- |
 | `user.invited` | Admin invited a new user |
+| `user.invitation.resent` | Admin re-issued a fresh invitation token |
 | `user.activated` | Invited user completed setup |
+| `user.activation.failed` | Activation attempt with invalid/expired/used token |
 | `user.disabled` | `disabledAt` set |
 | `user.enabled` | `disabledAt` cleared |
+| `user.unlocked` | Admin cleared a lockout |
 | `user.role.granted` | Role added to user |
 | `user.role.revoked` | Role removed from user |
 | `role.created` | New role defined |
@@ -175,7 +189,9 @@ This is the initial set. Adding an event is a code change in `src/lib/audit/even
 | Event |
 | --- |
 | `audit.viewed` (the audit log itself was queried) |
-| `audit.exported` (a CSV/JSON export was generated) |
+| `audit.export.requested` (export endpoint was hit and authorized) |
+| `audit.export.denied` (export endpoint was hit and rejected) |
+| `audit.exported` (a CSV/JSON export was generated — currently stubbed) |
 | `setting.updated` (department-wide setting changed) |
 | `backup.restore.tested` (manual marker for restore drills) |
 

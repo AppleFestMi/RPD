@@ -6,20 +6,28 @@ Administrative coordination portal for the Richmond Police Department. Schedule,
 
 ## Status
 
-This branch (`main`) holds the **production-grade foundation**. Identity, authorization, and audit logging exist before features. Most feature modules are **stubbed**, intentionally.
+This branch (`main`) holds the **production-grade foundation plus the live-pilot security/admin floor**. Identity, MFA, RBAC, audit, and the user/role/audit admin UIs land here so the next session can begin scheduling on top of a real security baseline.
 
 What works after `npm install && npm run dev`:
 - Health and readiness endpoints
-- Login (credentials provider with Argon2id, lockout, audit logging)
-- Authenticated dashboard demonstrating the auth/permission/audit pattern
+- Login (Argon2id, lockout, MFA: TOTP + single-use backup codes, audit-logged)
+- MFA enrollment at `/setup/mfa` with QR + manual entry, regeneratable backup codes
+- Force password reset flow at `/setup/password` (gated by `forcePasswordReset` on User)
+- Account activation flow at `/activate/<token>` from admin-issued invitations
+- `/admin/users` list, `/admin/users/new` invite, `/admin/users/[id]` detail with: enable/disable, force-reset, unlock, role grant/revoke, MFA reset (typed-email confirmation), invitation re-issue
+- `/admin/roles` read view of role definitions and their permissions
+- `/admin/audit` log viewer with filters, pagination, and an audit-logged export request stub
 - Full Prisma schema for the operational data model
 - Permission catalog and role presets, seeded into the database
+- Vitest with unit tests for password policy, redaction, encryption, TOTP/backup-code shape, MFA gate evaluation, and audit filter builder
 
 What is intentionally not yet implemented:
-- TOTP MFA verifier (schema + login flow are wired; the verifier function is the next commit)
-- Schedule, requests, training, announcements, policies, equipment, vehicles, events, directory, admin UIs
-- Audit log viewer UI
-- File attachment upload pipeline (schema present, route handler pending)
+- SMTP delivery of invitations — admin currently copy/pastes the activation URL. The hook is in place; only the mail step is missing.
+- Audit log CSV streaming — `requestAuditExport` enforces permission and audit-logs the request and any denial; the CSV body itself is the next thing to plug in.
+- Re-authentication challenge for high-risk admin actions — current MFA reset uses a typed-email confirmation. Re-auth (re-enter password) is the upgrade path.
+- Schedule, requests, training, announcements, policies, equipment, vehicles, events, directory feature modules.
+- File attachment upload pipeline (schema present, route handler pending).
+- Multi-instance backing store for in-progress MFA enrollment (today: in-memory; fine for one VPS, not for a horizontally-scaled deploy).
 
 The single-file demo from the prototype phase lives at [`prototype/index.html`](prototype/index.html). It is reference only, not the deployed system.
 
@@ -89,12 +97,22 @@ npm run build             # Production build
 npm run start             # Start production server (post-build)
 npm run lint              # ESLint
 npm run typecheck         # tsc --noEmit (strict mode + noUncheckedIndexedAccess)
-npm run preflight         # typecheck + lint
+npm test                  # Vitest (unit tests, no DB)
+npm run preflight         # typecheck + lint + tests
 npm run prisma:generate   # Regenerate Prisma client
 npm run prisma:migrate:dev   # Create/apply a dev migration
 npm run prisma:migrate:deploy # Apply migrations in production
 npm run db:seed           # Idempotent seed of permissions/roles + bootstrap admin
 ```
+
+## First-pilot checklist
+
+1. Bootstrap SystemAdmin via `npm run db:seed` (sets `forcePasswordReset = true`).
+2. Sign in at `/login` with the seed password — the app redirects to `/setup/password` to set a real one.
+3. SystemAdmin's role requires MFA, so the next stop is `/setup/mfa`. Scan the QR, verify, and **save the backup codes** (shown once).
+4. From `/admin/users/new`, invite the rest of the staff. Hand each user the activation URL via department email.
+5. Each invitee activates at `/activate/<token>`, sets a password, accepts the boundary notice, then enrolls MFA if their role requires it.
+6. `/admin/audit` should already show login successes, MFA setups, role grants. That's the live-pilot smoke test passing.
 
 ## Deploying
 

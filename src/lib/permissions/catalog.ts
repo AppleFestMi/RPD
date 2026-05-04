@@ -69,8 +69,10 @@ export const PERMISSION_CATALOG = [
   { key: "directory.read",           label: "Read directory" },
 
   // Admin
-  { key: "admin.users.manage",       label: "Manage users (invite, disable, reset)" },
+  { key: "admin.users.manage",       label: "Manage users (invite, disable, force reset)" },
   { key: "admin.roles.manage",       label: "Manage roles and permissions" },
+  { key: "admin.mfa.reset",          label: "Reset MFA for another user" },
+  { key: "admin.users.unlock",       label: "Unlock a locked-out account" },
 
   // Audit
   { key: "audit.read",               label: "Read audit log" },
@@ -234,6 +236,7 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
       "events.manage",
       "directory.read",
       "admin.users.manage",
+      "admin.users.unlock",
     ],
   },
   {

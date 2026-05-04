@@ -13,10 +13,23 @@ export const EVENTS = {
   AUTH_LOGOUT:               "auth.logout",
   AUTH_LOCKOUT_TRIGGERED:    "auth.lockout.triggered",
   AUTH_LOCKOUT_EXPIRED:      "auth.lockout.expired",
-  AUTH_MFA_ENROLLED:         "auth.mfa.enrolled",
-  AUTH_MFA_RESET:            "auth.mfa.reset",
+  AUTH_MFA_SETUP_STARTED:    "auth.mfa.setup.started",
+  AUTH_MFA_SETUP_COMPLETED:  "auth.mfa.setup.completed",
+  AUTH_MFA_CHALLENGE_SUCCESS:"auth.mfa.challenge.success",
+  AUTH_MFA_CHALLENGE_FAILURE:"auth.mfa.challenge.failure",
+  AUTH_MFA_DISABLED:         "auth.mfa.disabled",
+  AUTH_MFA_RESET_BY_ADMIN:   "auth.mfa.reset_by_admin",
+
+  AUTH_BACKUP_CODES_GENERATED:   "auth.backup_codes.generated",
+  AUTH_BACKUP_CODE_USED:         "auth.backup_code.used",
+  AUTH_BACKUP_CODE_FAILURE:      "auth.backup_code.failure",
+  AUTH_BACKUP_CODES_REGENERATED: "auth.backup_codes.regenerated",
+
   AUTH_PASSWORD_CHANGED:     "auth.password.changed",
-  AUTH_PASSWORD_RESET_FORCED:"auth.password.resetForced",
+  AUTH_PASSWORD_RESET_REQUIRED: "auth.password_reset.required",
+  AUTH_PASSWORD_RESET_SUCCESS:  "auth.password_reset.success",
+  AUTH_PASSWORD_RESET_FAILURE:  "auth.password_reset.failure",
+  AUTH_PASSWORD_RESET_FORCED: "auth.password.resetForced",
   AUTH_SESSION_REVOKED:      "auth.session.revoked",
 
   // Authorization
@@ -24,9 +37,12 @@ export const EVENTS = {
 
   // User / role
   USER_INVITED:              "user.invited",
+  USER_INVITATION_RESENT:    "user.invitation.resent",
   USER_ACTIVATED:            "user.activated",
+  USER_ACTIVATION_FAILED:    "user.activation.failed",
   USER_DISABLED:             "user.disabled",
   USER_ENABLED:              "user.enabled",
+  USER_UNLOCKED:             "user.unlocked",
   USER_ROLE_GRANTED:         "user.role.granted",
   USER_ROLE_REVOKED:         "user.role.revoked",
   ROLE_CREATED:              "role.created",
@@ -102,6 +118,8 @@ export const EVENTS = {
 
   // Audit / settings
   AUDIT_VIEWED:                  "audit.viewed",
+  AUDIT_EXPORT_REQUESTED:        "audit.export.requested",
+  AUDIT_EXPORT_DENIED:           "audit.export.denied",
   AUDIT_EXPORTED:                "audit.exported",
   AUDIT_RETENTION_PURGED:        "audit.retention.purged",
   SETTING_UPDATED:               "setting.updated",
