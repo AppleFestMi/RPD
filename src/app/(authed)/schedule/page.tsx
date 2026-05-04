@@ -7,6 +7,8 @@ import { addDays, formatRange, isoDay, startOfWeek, weekDates } from "@/lib/sche
 import { shiftStatusTone, StatusChip } from "@/components/schedule/StatusChip";
 import { auditLog } from "@/lib/audit/audit";
 import { EVENTS } from "@/lib/audit/events";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Button } from "@/components/ui/Button";
 
 export const dynamic = "force-dynamic";
 
@@ -77,34 +79,38 @@ export default async function SchedulePage({
   const thisWeek = isoDay(startOfWeek(new Date()));
 
   return (
-    <main className="p-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Schedule</h1>
-          <p className="text-sm text-text3">
-            Week of {weekStart.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href={`/schedule?week=${prevWeek}`} className="btn">← Prev</Link>
-          <Link href={`/schedule?week=${thisWeek}`} className="btn">This week</Link>
-          <Link href={`/schedule?week=${nextWeek}`} className="btn">Next →</Link>
-          <Link href="/schedule/open" className="btn">Open shifts</Link>
-          <Link href="/schedule/availability" className="btn">Availability</Link>
-          <Link href="/schedule/swaps" className="btn">Swaps</Link>
-          <Link href={`/schedule-print/${isoDay(new Date())}`} target="_blank" className="btn" rel="noreferrer">
-            Print today's roster
-          </Link>
-          {can(actor, "schedule.create") ? (
-            <Link href="/schedule/new" className="btn btn-primary">+ Add shift</Link>
-          ) : null}
-          {can(actor, "schedule.publish") ? (
-            <Link href={`/schedule/publish?week=${isoDay(weekStart)}`} className="btn btn-primary">
-              Publish week…
-            </Link>
-          ) : null}
-        </div>
-      </header>
+    <main className="mx-auto max-w-7xl space-y-5 p-6">
+      <PageHeader
+        eyebrow="Scheduling"
+        title="Schedule"
+        description={`Week of ${weekStart.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`}
+        actions={
+          <>
+            <Button href={`/schedule?week=${prevWeek}`} variant="outline" size="sm">
+              ← Prev
+            </Button>
+            <Button href={`/schedule?week=${thisWeek}`} variant="outline" size="sm">
+              This week
+            </Button>
+            <Button href={`/schedule?week=${nextWeek}`} variant="outline" size="sm">
+              Next →
+            </Button>
+            <Button href={`/schedule-print/${isoDay(new Date())}`} variant="outline" size="sm" external>
+              Print roster
+            </Button>
+            {can(actor, "schedule.create") ? (
+              <Button href="/schedule/new" variant="accent" size="sm">
+                + Add shift
+              </Button>
+            ) : null}
+            {can(actor, "schedule.publish") ? (
+              <Button href={`/schedule/publish?week=${isoDay(weekStart)}`} variant="primary" size="sm">
+                Publish week…
+              </Button>
+            ) : null}
+          </>
+        }
+      />
 
       <FilterBar
         weekStart={isoDay(weekStart)}
@@ -159,17 +165,10 @@ export default async function SchedulePage({
         </div>
       </div>
 
-      <p className="mt-4 max-w-3xl rounded-md bg-warn-soft/40 px-3 py-2 text-[12px] text-text2">
+      <p className="mt-2 max-w-3xl rounded-md border border-warn/30 bg-warn-soft/40 px-3 py-2 text-[12px] text-text2">
         <strong>Administrative notes only.</strong> Shift notes, locations, and titles must not contain
         CAD, RMS, case, victim/witness, LEIN, NCIC, or investigative information.
       </p>
-
-      <style>{`
-        .btn { display:inline-flex; align-items:center; gap:6px; border:1px solid #e3e7ee; background:white; padding:6px 12px; border-radius:8px; font-size:13px; font-weight:500; }
-        .btn:hover { background:#fafbfd; }
-        .btn-primary { background:#0f1d33; border-color:#0f1d33; color:white; }
-        .btn-primary:hover { background:#14253f; }
-      `}</style>
     </main>
   );
 }

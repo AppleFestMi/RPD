@@ -3,6 +3,9 @@ import { requireActor } from "@/lib/auth/session";
 import { auditLog } from "@/lib/audit/audit";
 import { EVENTS } from "@/lib/audit/events";
 import { ForceResetForm } from "./ForceResetForm";
+import { Card, CardBody, CardHeader } from "@/components/ui/Card";
+import { AlertBanner } from "@/components/ui/AlertBanner";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -22,12 +25,23 @@ export default async function ForcePasswordResetPage() {
   });
 
   return (
-    <main className="mx-auto max-w-md p-6">
-      <h1 className="text-xl font-semibold">Set a new password</h1>
-      <p className="mt-1 text-sm text-text3">
-        Your account requires a password change before you can continue.
-      </p>
-      <ForceResetForm />
-    </main>
+    <div className="mx-auto max-w-xl space-y-5 p-6">
+      <PageHeader
+        eyebrow="Account setup"
+        title="Set a new password"
+        description="Your account is in forced-reset state. You must replace the temporary password before you can continue."
+      />
+      <AlertBanner tone="warn" title="Why am I seeing this?">
+        An administrator created this account with a temporary password, or flagged it for reset.
+        Choose a new password that is at least 12 characters and not on the breached-password
+        blocklist. The reset is audit-logged.
+      </AlertBanner>
+      <Card>
+        <CardHeader title="New password" />
+        <CardBody>
+          <ForceResetForm />
+        </CardBody>
+      </Card>
+    </div>
   );
 }

@@ -6,6 +6,7 @@ import { auditLog } from "@/lib/audit/audit";
 import { EVENTS } from "@/lib/audit/events";
 import { AuditClient } from "./AuditClient";
 import { buildWhere } from "./where";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -73,11 +74,12 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <main className="p-6">
-      <h1 className="text-2xl font-bold tracking-tight">Audit log</h1>
-      <p className="mt-1 text-sm text-text3">
-        Append-only system events. Reading this page is itself logged.
-      </p>
+    <main className="mx-auto max-w-7xl space-y-5 p-6">
+      <PageHeader
+        eyebrow="Admin"
+        title="Audit log"
+        description="Append-only record of authentication, authorization, and admin events. Reading this page is itself logged."
+      />
 
       <AuditClient
         filter={filter}

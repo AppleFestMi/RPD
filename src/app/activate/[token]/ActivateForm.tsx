@@ -9,7 +9,7 @@ export function ActivateForm({ token }: { token: string }) {
 
   return (
     <form
-      className="mt-5 space-y-3"
+      className="space-y-3.5"
       onSubmit={(e) => {
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
@@ -29,48 +29,86 @@ export function ActivateForm({ token }: { token: string }) {
         });
       }}
     >
-      <label className="block">
-        <span className="block text-xs text-text3">New password</span>
-        <input
-          name="newPassword"
-          type="password"
-          autoComplete="new-password"
-          required
-          minLength={12}
-          className="mt-1 w-full rounded-md border border-line bg-white px-3 py-2 outline-none focus:border-accent"
-        />
-        <p className="mt-1 text-[11px] text-text3">At least 12 characters.</p>
-      </label>
-      <label className="block">
-        <span className="block text-xs text-text3">Confirm new password</span>
-        <input
-          name="confirmPassword"
-          type="password"
-          autoComplete="new-password"
-          required
-          minLength={12}
-          className="mt-1 w-full rounded-md border border-line bg-white px-3 py-2 outline-none focus:border-accent"
-        />
-      </label>
+      <Field
+        label="New password"
+        name="newPassword"
+        type="password"
+        autoComplete="new-password"
+        required
+        minLength={12}
+        hint="At least 12 characters."
+      />
+      <Field
+        label="Confirm new password"
+        name="confirmPassword"
+        type="password"
+        autoComplete="new-password"
+        required
+        minLength={12}
+      />
 
-      <label className="flex items-start gap-2 pt-2 text-[12px] text-text2">
-        <input name="acceptBoundary" type="checkbox" required className="mt-0.5" />
+      <label className="mt-1 flex items-start gap-2.5 rounded-md border border-warn/30 bg-warn-soft/15 px-3 py-2.5 text-[12.5px] leading-snug text-white/80">
+        <input
+          name="acceptBoundary"
+          type="checkbox"
+          required
+          className="mt-1 h-3.5 w-3.5 flex-none accent-warn"
+        />
         <span>
-          I understand this is an administrative coordination portal and will not enter
-          CAD, RMS, evidence, body camera, HR/payroll, LEIN, NCIC, or any
-          CJIS-regulated criminal justice information.
+          I understand this is an administrative coordination portal and will not enter CAD,
+          RMS, evidence, body camera, HR/payroll, LEIN, NCIC, or any CJIS-regulated criminal
+          justice information.
         </span>
       </label>
 
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
+      {error ? (
+        <p className="rounded-md border border-danger/40 bg-danger-soft/20 px-3 py-2 text-[12.5px] text-danger-soft">
+          {error}
+        </p>
+      ) : null}
 
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-md bg-accent px-3 py-2 text-white font-medium hover:bg-accent-ink disabled:opacity-60"
+        className="mt-1 w-full rounded-md bg-accent px-3 py-2.5 text-[13.5px] font-semibold text-white transition-colors hover:bg-accent-ink disabled:opacity-60"
       >
         {pending ? "Activating…" : "Activate account"}
       </button>
     </form>
+  );
+}
+
+function Field({
+  label,
+  hint,
+  name,
+  type,
+  required,
+  autoComplete,
+  minLength,
+}: {
+  label: string;
+  hint?: string;
+  name: string;
+  type: string;
+  required?: boolean;
+  autoComplete?: string;
+  minLength?: number;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.1em] text-white/65">
+        {label}
+      </span>
+      <input
+        name={name}
+        type={type}
+        required={required}
+        minLength={minLength}
+        autoComplete={autoComplete}
+        className="w-full rounded-md border border-white/10 bg-navy-ink/70 px-3 py-2 text-white outline-none transition-colors focus:border-accent"
+      />
+      {hint ? <span className="mt-1 block text-[11px] text-white/55">{hint}</span> : null}
+    </label>
   );
 }

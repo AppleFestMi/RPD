@@ -1,6 +1,7 @@
 import { requireActor } from "@/lib/auth/session";
 import { requirePermission } from "@/lib/permissions/check";
 import { prisma } from "@/lib/db";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -25,14 +26,14 @@ export default async function RolesPage() {
   });
 
   return (
-    <main className="p-6">
-      <h1 className="text-2xl font-bold tracking-tight">Roles</h1>
-      <p className="mt-1 text-sm text-text3">
-        Read-only view of role definitions and permission grants. Assign roles to
-        users from the user detail page.
-      </p>
+    <main className="mx-auto max-w-7xl space-y-5 p-6">
+      <PageHeader
+        eyebrow="Admin"
+        title="Roles"
+        description="Read-only view of role definitions and permission grants. Assign roles to users from the user detail page."
+      />
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         {roles.map((r) => (
           <article key={r.id} className="rounded-lg border border-line bg-white p-4">
             <header className="flex items-center justify-between">

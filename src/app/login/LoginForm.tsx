@@ -15,7 +15,7 @@ export function LoginForm({
 
   return (
     <form
-      className="mt-6 space-y-3"
+      className="space-y-3.5"
       onSubmit={(e) => {
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
@@ -39,51 +39,85 @@ export function LoginForm({
         });
       }}
     >
-      <label className="block">
-        <span className="block text-xs text-white/70">Email</span>
-        <input
-          name="email"
-          type="email"
-          autoComplete="username"
-          required
-          className="mt-1 w-full rounded-md border border-white/10 bg-navy-ink/70 px-3 py-2 text-white outline-none focus:border-accent"
-        />
-      </label>
-      <label className="block">
-        <span className="block text-xs text-white/70">Password</span>
-        <input
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          className="mt-1 w-full rounded-md border border-white/10 bg-navy-ink/70 px-3 py-2 text-white outline-none focus:border-accent"
-        />
-      </label>
-      <label className="block">
-        <span className="block text-xs text-white/70">
-          MFA code <span className="text-white/40">(if enrolled)</span>
-        </span>
-        <input
-          name="mfaCode"
-          type="text"
-          inputMode="text"
-          autoComplete="one-time-code"
-          spellCheck={false}
-          maxLength={20}
-          placeholder="123456 or AAAA-BBBB-CCCC"
-          className="mt-1 w-full rounded-md border border-white/10 bg-navy-ink/70 px-3 py-2 text-white font-mono tracking-wide outline-none focus:border-accent"
-        />
-      </label>
+      <Field label="Email" name="email" type="email" autoComplete="username" required />
+      <Field
+        label="Password"
+        name="password"
+        type="password"
+        autoComplete="current-password"
+        required
+      />
+      <Field
+        label="MFA code"
+        hint="6-digit code or AAAA-BBBB-CCCC backup code (if enrolled)"
+        name="mfaCode"
+        type="text"
+        autoComplete="one-time-code"
+        spellCheck={false}
+        maxLength={20}
+        placeholder="123456"
+        mono
+      />
 
-      {error ? <p className="text-[12px] text-danger-soft">{error}</p> : null}
+      {error ? (
+        <p className="rounded-md border border-danger/40 bg-danger-soft/20 px-3 py-2 text-[12.5px] text-danger-soft">
+          {error}
+        </p>
+      ) : null}
 
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-md bg-accent px-3 py-2 font-medium text-white hover:bg-accent-ink disabled:opacity-60"
+        className="mt-1 w-full rounded-md bg-accent px-3 py-2.5 text-[13.5px] font-semibold text-white transition-colors hover:bg-accent-ink disabled:opacity-60"
       >
         {pending ? "Signing in…" : "Continue"}
       </button>
     </form>
+  );
+}
+
+function Field({
+  label,
+  hint,
+  name,
+  type,
+  required,
+  autoComplete,
+  spellCheck,
+  maxLength,
+  placeholder,
+  mono,
+}: {
+  label: string;
+  hint?: string;
+  name: string;
+  type: string;
+  required?: boolean;
+  autoComplete?: string;
+  spellCheck?: boolean;
+  maxLength?: number;
+  placeholder?: string;
+  mono?: boolean;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.1em] text-white/65">
+        {label}
+      </span>
+      <input
+        name={name}
+        type={type}
+        required={required}
+        autoComplete={autoComplete}
+        spellCheck={spellCheck}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        className={
+          "w-full rounded-md border border-white/10 bg-navy-ink/70 px-3 py-2 text-white outline-none transition-colors focus:border-accent " +
+          (mono ? "font-mono tracking-wider" : "")
+        }
+      />
+      {hint ? <span className="mt-1 block text-[11px] text-white/55">{hint}</span> : null}
+    </label>
   );
 }

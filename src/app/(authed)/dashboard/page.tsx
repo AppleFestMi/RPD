@@ -1,69 +1,391 @@
 /**
- * Dashboard — authenticated landing page.
+ * Dashboard.
  *
- * This is intentionally minimal. It demonstrates the auth/permission/audit
- * pattern that all subsequent feature pages must follow.
+ * The Chief's first impression. Shows real data where it exists today
+ * (schedule, open shifts, audit, role context) and labels everything
+ * else as planned. Every server-side check (requireActor, can,
+ * audit logging) is preserved.
+ *
+ * What's REAL on this page:
+ *   - the user's next assigned shift, from ScheduleAssignment
+ *   - this week's open-shift count, from OpenShift
+ *   - this week's published / draft shift counts, from ScheduleShift
+ *   - admin pending approvals (open-shift applications), if visible
+ *   - last 24h audit events count, if the user can audit.read
+ *   - actor role + permission count
+ *
+ * What's intentionally placeholder:
+ *   - "Today's briefing" body copy (no Announcements module yet)
+ *   - "Policy acknowledgments due" (no Policies module yet)
+ *   - "Upcoming training" (no Training module yet)
+ *   - "Vehicle/equipment issues" (modules not wired)
+ * Each placeholder card explicitly says "module pending" and links to
+ * the corresponding Coming Soon page so it's not misleading.
  */
 import { headers } from "next/headers";
 import { requireActor } from "@/lib/auth/session";
 import { can } from "@/lib/permissions/check";
+import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit/audit";
 import { EVENTS } from "@/lib/audit/events";
+import { addDays, formatRange, isoDay, startOfWeek } from "@/lib/schedule/time";
+
+import { HeroCard } from "@/components/dashboard/HeroCard";
+import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
+import { StatCard } from "@/components/dashboard/StatCard";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { QuickActionButton } from "@/components/ui/QuickActionButton";
+import { Icon } from "@/components/ui/Icons";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const actor = await requireActor("/dashboard");
+  const h = await headers();
 
-  // Example of UI-level capability check (NOT a security boundary).
+  const now = new Date();
+  const weekStart = startOfWeek(now);
+  const weekEnd = addDays(weekStart, 7);
+
+  const canSeeAllRequests = can(actor, "requests.read.all");
+  const canApprovePickup = can(actor, "schedule.approvePickup");
   const canSeeAudit = can(actor, "audit.read");
 
-  // Optional: log explicit admin-area views. We do not log every dashboard
-  // hit (would be noise), but specific sensitive surfaces should.
-  if (canSeeAudit) {
-    const h = await headers();
-    await auditLog({
-      actor: { userId: actor.userId, roleSnapshot: actor.roleKeys },
-      eventType: EVENTS.AUDIT_VIEWED,
-      action: "view",
-      result: "success",
-      requestId: h.get("x-request-id"),
-      ip: h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-      userAgent: h.get("user-agent"),
-      metadata: { surface: "dashboard.summary" },
-    });
-  }
+  // Pull dashboard data in parallel. Everything here is a count or a
+  // small slice; nothing fans out to a large query.
+  const [
+    nextAssignment,
+    openShiftsThisWeek,
+    publishedThisWeek,
+    draftThisWeek,
+    pendingPickups,
+    last24hAuditCount,
+    user,
+  ] = await Promise.all([
+    prisma.scheduleAssignment.findFirst({
+      where: {
+        userId: actor.userId,
+        status: { in: ["scheduled", "pending", "changed"] },
+        shift: { archivedAt: null, status: { not: "cancelled" }, date: { gte: startOfDayUtc(now) } },
+      },
+      orderBy: [{ shift: { date: "asc" } }, { shift: { startMinute: "asc" } }],
+      include: { shift: true },
+    }),
+    prisma.openShift.count({
+      where: { date: { gte: weekStart, lt: weekEnd }, status: "open" },
+    }),
+    prisma.scheduleShift.count({
+      where: { date: { gte: weekStart, lt: weekEnd }, status: "published", archivedAt: null },
+    }),
+    prisma.scheduleShift.count({
+      where: {
+        date: { gte: weekStart, lt: weekEnd },
+        status: { in: ["draft", "changed"] },
+        archivedAt: null,
+      },
+    }),
+    canApprovePickup
+      ? prisma.openShiftApplication.count({ where: { decision: "pending" } })
+      : Promise.resolve(0),
+    canSeeAudit
+      ? prisma.auditLog.count({ where: { createdAt: { gte: addHours(now, -24) } } })
+      : Promise.resolve(0),
+    prisma.user.findUnique({
+      where: { id: actor.userId },
+      select: { name: true, rank: true, badge: true },
+    }),
+  ]);
+
+  // The dashboard view is itself an audit-relevant event (admin surface
+  // visibility). We log it once per render with the surface name and
+  // the role snapshot so an auditor can reconstruct who saw what.
+  await auditLog({
+    actor: { userId: actor.userId, roleSnapshot: actor.roleKeys },
+    eventType: EVENTS.AUDIT_VIEWED,
+    action: "view",
+    result: "success",
+    requestId: h.get("x-request-id"),
+    ip: h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    userAgent: h.get("user-agent"),
+    metadata: { surface: "dashboard.summary" },
+  });
+
+  const greeting = greetingFor(now);
+  const firstName = user?.name?.split(/\s+/)[0] ?? "";
 
   return (
-    <main className="p-6">
-      <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-      <p className="mt-1 text-sm text-text3">Foundation build · feature modules pending.</p>
+    <div className="mx-auto max-w-7xl space-y-6 p-6">
+      <HeroCard
+        title={`${greeting}${firstName ? `, ${firstName}` : ""}.`}
+        description={
+          user?.rank || user?.badge
+            ? [user?.rank, user?.badge ? `Badge ${user.badge}` : null]
+                .filter(Boolean)
+                .join(" · ")
+            : "Welcome to the Internal Ops portal."
+        }
+        meta={
+          <span className="font-mono">
+            {now.toLocaleDateString(undefined, {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </span>
+        }
+        actions={
+          <>
+            <Button href="/schedule" variant="accent" size="md">
+              Open schedule
+            </Button>
+            <Button
+              href="/schedule/availability"
+              variant="outline"
+              size="md"
+              className="bg-white/10 text-white border-white/20 hover:bg-white/20 hover:border-white/40"
+            >
+              Submit availability
+            </Button>
+          </>
+        }
+      />
 
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card title="My next shift" sub="—" />
-        <Card title="Pending approvals" sub="—" />
-        <Card title="Open shifts this week" sub="—" />
-        <Card title="Policies awaiting ack" sub="—" />
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="My next shift"
+          value={nextAssignment ? formatRange(nextAssignment.shift.startMinute, nextAssignment.shift.endMinute) : "—"}
+          sub={
+            nextAssignment
+              ? `${nextAssignment.shift.label} · ${nextAssignment.shift.date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}`
+              : "No upcoming assignment"
+          }
+          trailing={<Icon.Clock size={18} />}
+          tone={nextAssignment ? "info" : "neutral"}
+        />
+        <StatCard
+          label="Open shifts this week"
+          value={openShiftsThisWeek}
+          sub={openShiftsThisWeek > 0 ? "Coverage requests posted" : "No coverage requests"}
+          trailing={<Icon.Megaphone size={18} />}
+          tone={openShiftsThisWeek > 0 ? "warn" : "neutral"}
+        />
+        <StatCard
+          label="Published shifts (week)"
+          value={publishedThisWeek}
+          sub={draftThisWeek > 0 ? `${draftThisWeek} draft / changed` : "All shifts published"}
+          trailing={<Icon.Calendar size={18} />}
+          tone={draftThisWeek > 0 ? "warn" : "ok"}
+        />
+        {canApprovePickup ? (
+          <StatCard
+            label="Pickup applications"
+            value={pendingPickups}
+            sub={pendingPickups > 0 ? "Awaiting your decision" : "Nothing pending"}
+            trailing={<Icon.Inbox size={18} />}
+            tone={pendingPickups > 0 ? "pending" : "neutral"}
+          />
+        ) : (
+          <StatCard
+            label="My recent activity"
+            value="—"
+            sub="Module pending"
+            trailing={<Icon.Activity size={18} />}
+          />
+        )}
       </section>
 
-      <section className="mt-8 rounded-lg border border-line bg-white p-4">
-        <h2 className="text-sm font-semibold">Your access</h2>
-        <p className="mt-1 text-xs text-text3">
-          Roles: {actor.roleKeys.length === 0 ? "(none)" : actor.roleKeys.join(", ")}
-        </p>
-        <p className="mt-1 text-xs text-text3">
-          Permissions: {actor.permissionKeys.length}
-        </p>
+      <section className="grid gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <DashboardPanel
+            title="My upcoming shifts"
+            meta={<Badge tone="navy">Schedule</Badge>}
+            viewAllHref="/schedule"
+          >
+            {nextAssignment ? (
+              <ul className="divide-y divide-line/70">
+                <li className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+                  <div className="min-w-0">
+                    <div className="text-[14px] font-semibold tracking-tight">
+                      {nextAssignment.shift.label}
+                    </div>
+                    <div className="mt-0.5 text-[12.5px] text-text3">
+                      {nextAssignment.shift.date.toLocaleDateString(undefined, {
+                        weekday: "long",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                      {" · "}
+                      <span className="font-mono">
+                        {formatRange(
+                          nextAssignment.shift.startMinute,
+                          nextAssignment.shift.endMinute,
+                        )}
+                      </span>
+                      {nextAssignment.shift.location ? ` · ${nextAssignment.shift.location}` : null}
+                    </div>
+                  </div>
+                  <Badge tone={nextAssignment.shift.status === "published" ? "ok" : "warn"}>
+                    {nextAssignment.shift.status}
+                  </Badge>
+                </li>
+              </ul>
+            ) : (
+              <EmptyState
+                icon={<Icon.Calendar size={20} />}
+                title="No upcoming shifts assigned"
+                description="When a supervisor assigns you to a shift, it will appear here."
+              />
+            )}
+          </DashboardPanel>
+
+          <DashboardPanel
+            title="Today's briefing"
+            meta={<Badge tone="info">Module pending</Badge>}
+            viewAllHref="/announcements"
+            viewAllLabel="Open announcements"
+          >
+            <EmptyState
+              icon={<Icon.Bell size={20} />}
+              title="Briefings are not yet wired in"
+              description="Once the Announcements module ships, supervisors will publish daily briefings here. Until then, treat shift roll-call as the source of truth."
+            />
+          </DashboardPanel>
+
+          <DashboardPanel
+            title="Open shifts needing coverage"
+            meta={<Badge tone="warn">{openShiftsThisWeek} open</Badge>}
+            viewAllHref="/schedule/open"
+          >
+            {openShiftsThisWeek === 0 ? (
+              <EmptyState
+                icon={<Icon.Megaphone size={20} />}
+                title="No open shifts this week"
+                description="When a supervisor posts a shift for pickup, eligible officers can apply from the Open Shifts board."
+              />
+            ) : (
+              <p className="text-[13px] text-text2">
+                {openShiftsThisWeek} shift{openShiftsThisWeek === 1 ? "" : "s"} posted for the week
+                of {weekStart.toLocaleDateString(undefined, { month: "short", day: "numeric" })}.
+                Apply from the Open Shifts board.
+              </p>
+            )}
+          </DashboardPanel>
+        </div>
+
+        <div className="space-y-6">
+          <DashboardPanel title="Quick actions">
+            <div className="grid grid-cols-1 gap-2">
+              <QuickActionButton
+                href="/schedule"
+                label="View schedule"
+                description="This week's published roster"
+                icon={<Icon.Calendar size={16} />}
+              />
+              <QuickActionButton
+                href="/schedule/open"
+                label="Open shifts"
+                description="Apply for coverage requests"
+                icon={<Icon.Megaphone size={16} />}
+              />
+              <QuickActionButton
+                href="/schedule/availability"
+                label="Submit availability"
+                description="Reserve / PT availability"
+                icon={<Icon.Clock size={16} />}
+              />
+              <QuickActionButton
+                href="/schedule/timeoff"
+                label="Time off"
+                description="View status of requests"
+                icon={<Icon.FileText size={16} />}
+              />
+              <QuickActionButton
+                href="/training"
+                label="Request training"
+                description="Module pending"
+                icon={<Icon.Award size={16} />}
+              />
+              <QuickActionButton
+                href="/vehicles"
+                label="Report vehicle issue"
+                description="Module pending"
+                icon={<Icon.Car size={16} />}
+              />
+              {canSeeAllRequests ? (
+                <QuickActionButton
+                  href="/requests"
+                  label="Approval queue"
+                  description="All pending requests"
+                  icon={<Icon.Inbox size={16} />}
+                />
+              ) : null}
+              {canSeeAudit ? (
+                <QuickActionButton
+                  href="/admin/audit"
+                  label="Audit log"
+                  description={`${last24hAuditCount} events in last 24h`}
+                  icon={<Icon.Activity size={16} />}
+                />
+              ) : null}
+            </div>
+          </DashboardPanel>
+
+          <DashboardPanel
+            title="Policies awaiting acknowledgment"
+            meta={<Badge tone="info">Module pending</Badge>}
+          >
+            <EmptyState
+              icon={<Icon.BookOpen size={20} />}
+              title="No policies on file yet"
+              description="Once the Policies module ships, you'll see the documents you need to acknowledge here."
+            />
+          </DashboardPanel>
+
+          <DashboardPanel
+            title="Your access"
+            meta={<Badge tone="neutral">Read-only</Badge>}
+          >
+            <dl className="space-y-2 text-[13px]">
+              <div className="flex justify-between gap-3">
+                <dt className="text-text3">Roles</dt>
+                <dd className="text-right font-medium">
+                  {actor.roleKeys.length === 0 ? "—" : actor.roleKeys.join(", ")}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-text3">Permissions</dt>
+                <dd className="text-right font-medium font-mono">
+                  {actor.permissionKeys.length}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-text3">User ID</dt>
+                <dd className="text-right font-mono text-[12px] text-text3">
+                  {actor.userId.slice(0, 12)}…
+                </dd>
+              </div>
+            </dl>
+          </DashboardPanel>
+        </div>
       </section>
-    </main>
+    </div>
   );
 }
 
-function Card({ title, sub }: { title: string; sub: string }) {
-  return (
-    <div className="rounded-lg border border-line bg-white p-4">
-      <div className="text-[11px] uppercase tracking-wider text-text3">{title}</div>
-      <div className="mt-1 text-2xl font-semibold">{sub}</div>
-    </div>
-  );
+function greetingFor(d: Date): string {
+  const h = d.getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function startOfDayUtc(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+function addHours(d: Date, h: number): Date {
+  return new Date(d.getTime() + h * 60 * 60_000);
 }

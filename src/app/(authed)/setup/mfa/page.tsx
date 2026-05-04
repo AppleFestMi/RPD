@@ -4,6 +4,10 @@ import { prisma } from "@/lib/db";
 import { startMfaSetup } from "./actions";
 import { MfaSetupClient } from "./MfaSetupClient";
 import { actorMfaRequired } from "@/lib/auth/policy";
+import { Card, CardBody, CardHeader } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { AlertBanner } from "@/components/ui/AlertBanner";
+import { Badge } from "@/components/ui/Badge";
 
 export const dynamic = "force-dynamic";
 
@@ -15,20 +19,31 @@ export default async function MfaSetupPage() {
     select: { mfaEnabled: true, mfaSecretEncrypted: true },
   });
 
-  // Already enrolled — show a "you're done" state with regenerate-codes
-  // affordance. The (authed) layout will normally redirect them away if MFA
-  // isn't required by their role; this branch covers users who landed here
-  // from /admin or similar.
+  // Already enrolled — show a confirmation state with a regenerate-codes
+  // hint. The (authed) layout normally redirects MFA-not-required actors
+  // away; this branch covers users who navigate here directly.
   if (u?.mfaEnabled) {
     return (
-      <main className="mx-auto max-w-lg p-6">
-        <h1 className="text-xl font-semibold">Two-factor authentication</h1>
-        <p className="mt-1 text-sm text-text3">MFA is enabled for your account.</p>
-        <p className="mt-4 text-sm">
-          To regenerate backup codes, contact a system administrator or use the
-          recovery codes section in your profile (TODO).
-        </p>
-      </main>
+      <div className="mx-auto max-w-2xl space-y-5 p-6">
+        <PageHeader
+          eyebrow="Account setup"
+          title="Two-factor authentication"
+          description="MFA is enabled for your account."
+        />
+        <Card>
+          <CardBody>
+            <div className="flex items-center gap-3">
+              <Badge tone="ok" dot>
+                Enabled
+              </Badge>
+              <p className="text-[13px] text-text2">
+                To regenerate backup codes, contact a system administrator. (Self-service
+                regenerate UI is on the next-session list.)
+              </p>
+            </div>
+          </CardBody>
+        </Card>
+      </div>
     );
   }
 
@@ -41,37 +56,67 @@ export default async function MfaSetupPage() {
   const qrSvg = await QRCode.toString(otpauthUri, { type: "svg", margin: 1 });
 
   return (
-    <main className="mx-auto max-w-lg p-6">
-      <h1 className="text-xl font-semibold">Set up two-factor authentication</h1>
-      <p className="mt-1 text-sm text-text3">
-        {required
-          ? "Your role requires MFA before you can access the rest of the app."
-          : "MFA adds a second factor to your sign-in. Recommended for everyone."}
-      </p>
+    <div className="mx-auto max-w-2xl space-y-5 p-6">
+      <PageHeader
+        eyebrow="Account setup"
+        title="Set up two-factor authentication"
+        description={
+          required
+            ? "Your role requires MFA before you can access the rest of the app."
+            : "MFA adds a second factor to your sign-in. Recommended for everyone."
+        }
+      />
 
-      <ol className="mt-5 space-y-4 text-sm">
-        <li>
-          <div className="font-semibold">1. Scan the QR code with an authenticator app.</div>
-          <p className="text-text3">
-            Recommended apps: 1Password, Bitwarden, Authy, Google Authenticator.
+      {required ? (
+        <AlertBanner tone="warn" title="MFA is required for your role">
+          You will not be able to reach other parts of the app until enrollment is complete.
+          Once enrolled, sign-in will require your password plus a 6-digit code from your
+          authenticator (or a one-time backup code).
+        </AlertBanner>
+      ) : null}
+
+      <Card>
+        <CardHeader title="1. Scan with an authenticator app" meta="1Password · Authy · Google Authenticator" />
+        <CardBody>
+          <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
+            <div
+              className="rounded-md border border-line bg-white p-3"
+              // QR code is server-rendered SVG — no inline JS, CSP-safe.
+              dangerouslySetInnerHTML={{ __html: qrSvg }}
+            />
+            <div className="text-[13px] text-text2">
+              <p>
+                Open your authenticator app and scan this QR code. The app will start showing a
+                rotating 6-digit code for "RPD Internal Ops · {actor.email}".
+              </p>
+              <p className="mt-2 text-text3">
+                Lost your phone later? Use a backup code (issued in step 3) or contact a
+                SystemAdmin.
+              </p>
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader title="2. Or enter the secret manually" />
+        <CardBody>
+          <p className="mb-2 text-[13px] text-text3">
+            Type this 32-character base32 secret into your authenticator if scanning isn't
+            working:
           </p>
-          <div
-            className="mt-3 inline-block rounded-md bg-white p-3 border border-line"
-            // QR code is server-rendered SVG — no inline JS, CSP-safe.
-            dangerouslySetInnerHTML={{ __html: qrSvg }}
-          />
-        </li>
-        <li>
-          <div className="font-semibold">2. Or enter the secret manually.</div>
-          <code className="mt-1 inline-block rounded bg-neutral-soft px-2 py-1 font-mono text-[13px] tracking-wider">
+          <code className="inline-block rounded-md border border-line bg-neutral-soft px-3 py-1.5 font-mono text-[13px] tracking-[0.18em]">
             {secretBase32.match(/.{1,4}/g)?.join(" ") ?? secretBase32}
           </code>
-        </li>
-        <li>
-          <div className="font-semibold">3. Enter the 6-digit code your app shows.</div>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader title="3. Verify the code your app shows" />
+        <CardBody>
           <MfaSetupClient />
-        </li>
-      </ol>
-    </main>
+        </CardBody>
+      </Card>
+    </div>
   );
 }

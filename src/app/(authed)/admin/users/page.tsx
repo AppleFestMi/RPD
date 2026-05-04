@@ -5,6 +5,8 @@ import { requirePermission } from "@/lib/permissions/check";
 import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit/audit";
 import { EVENTS } from "@/lib/audit/events";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Button } from "@/components/ui/Button";
 
 export const dynamic = "force-dynamic";
 
@@ -55,16 +57,17 @@ export default async function UsersIndex({
   });
 
   return (
-    <main className="p-6">
-      <header className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold tracking-tight">Users</h1>
-        <Link
-          href="/admin/users/new"
-          className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent-ink"
-        >
-          Invite user
-        </Link>
-      </header>
+    <main className="mx-auto max-w-7xl space-y-5 p-6">
+      <PageHeader
+        eyebrow="Admin"
+        title="Users"
+        description={`${total} user${total === 1 ? "" : "s"} on file.`}
+        actions={
+          <Button href="/admin/users/new" variant="accent" size="md">
+            Invite user
+          </Button>
+        }
+      />
 
       <form className="mt-4 flex gap-2" method="get">
         <input
