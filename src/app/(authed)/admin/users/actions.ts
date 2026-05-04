@@ -116,7 +116,12 @@ export async function disableUser(input: z.infer<typeof USER_ID>) {
   if (userId === actor.userId) return { ok: false as const, error: "You cannot disable your own account." };
 
   await prisma.user.update({ where: { id: userId }, data: { disabledAt: new Date() } });
-  await prisma.session.deleteMany({ where: { userId } }); // revoke sessions
+  // No-op under JWT session strategy (the Session table is empty for
+  // Credentials-authed users). Kept so a future OIDC provider that
+  // writes to the Session table is automatically covered. Disabled
+  // users are kicked on their NEXT request via loadActor(), which
+  // returns null for disabledAt != null.
+  await prisma.session.deleteMany({ where: { userId } });
   await auditLog({
     actor: { userId: actor.userId, roleSnapshot: actor.roleKeys },
     eventType: EVENTS.USER_DISABLED,

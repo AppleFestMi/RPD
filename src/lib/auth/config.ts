@@ -41,9 +41,14 @@ const MAX_FAILS = 5;
 const LOCKOUT_MS = 15 * 60_000;
 
 export const authConfig: NextAuthConfig = {
+  // The PrismaAdapter is kept so future OIDC/SAML providers can persist
+  // Account / VerificationToken rows. With a Credentials provider, the
+  // session itself MUST be JWT — Auth.js v5 throws UnsupportedStrategy
+  // otherwise. The Session table will be empty under this strategy and
+  // is intentional dead weight, ready for non-credentials auth.
   adapter: PrismaAdapter(prisma),
   session: {
-    strategy: "database",
+    strategy: "jwt",
     maxAge: Math.max(
       Number(process.env.SESSION_ABSOLUTE_MS ?? 12 * 60 * 60_000) / 1000,
       60 * 60,
@@ -253,13 +258,30 @@ export const authConfig: NextAuthConfig = {
         return { id: user.id, email: user.email, name: user.name };
       },
     }),
-    // FUTURE: OIDC/SAML providers can be added here. The session strategy stays
-    // "database" so admin can revoke sessions regardless of provider.
+    // FUTURE: OIDC/SAML providers can be added here. They will use the
+    // same JWT strategy; database-backed sessions can be reintroduced
+    // later if a provider needs them, but Credentials must remain JWT.
   ],
   callbacks: {
-    async session({ session, user }) {
-      if (session.user && user) {
-        session.user.id = user.id;
+    // jwt: invoked on sign-in (with `user` populated from authorize) and
+    // on every subsequent request (with only `token`). We persist the
+    // user id so the session callback and getCurrentActor can find the
+    // actor; everything else (roles, permissions, MFA flag, disabled,
+    // forcePasswordReset) is read fresh from the database per request
+    // by loadActor / the (authed) layout. That keeps disable, role
+    // changes, and force-reset effective on the next request rather
+    // than waiting for token expiry.
+    async jwt({ token, user }) {
+      if (user?.id) {
+        token.sub = user.id;
+        if (user.email) token.email = user.email;
+        if (user.name) token.name = user.name;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user && typeof token.sub === "string") {
+        session.user.id = token.sub;
       }
       return session;
     },
