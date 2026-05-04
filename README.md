@@ -49,31 +49,64 @@ The single-file demo from the prototype phase lives at [`prototype/index.html`](
 Prerequisites: Node 20+, Docker (for Postgres), `openssl`.
 
 ```bash
-# 1. Copy env and fill in secrets
+# 1. Install dependencies
+npm install
+
+# 2. Create a local env file. Next.js auto-loads .env.local.
 cp .env.example .env.local
 openssl rand -base64 48 | tr -d '\n' | xargs -I{} sed -i '' "s|^NEXTAUTH_SECRET=.*|NEXTAUTH_SECRET={}|" .env.local
 openssl rand -base64 32 | tr -d '\n' | xargs -I{} sed -i '' "s|^MFA_ENCRYPTION_KEY=.*|MFA_ENCRYPTION_KEY={}|" .env.local
+# DATABASE_URL in .env.local must point to the host: localhost, not db.
+sed -i '' 's|@db:5432|@127.0.0.1:5432|' .env.local
 
-# 2. Bring up Postgres
-docker compose up -d db
-
-# 3. Install + generate Prisma client
-npm install
+# 3. Validate the Prisma schema and generate the client
+npx prisma validate
 npx prisma generate
 
-# 4. Apply schema (creates the database tables)
-npx prisma migrate dev --name init
+# 4. Bring up Postgres in Docker. The `app` service is profile-gated to
+#    `full` so this command does NOT need NEXTAUTH_SECRET set anywhere.
+docker compose up -d db
 
-# 5. Seed permissions, roles, and one bootstrap admin
+# 5. Apply the schema. Use a fresh migration name when the schema changes.
+npx prisma migrate dev --name scheduling_module
+
+# 6. Seed permissions, roles, the bootstrap admin, and (optional) a week
+#    of fictional schedule data.
 SEED_ADMIN_EMAIL=admin@example.gov \
 SEED_ADMIN_PASSWORD='ChangeMeImmediately123!' \
+SEED_SCHEDULE=1 \
   npm run db:seed
 
-# 6. Start the dev server
+# 7. Start the dev server.
 npm run dev
 ```
 
-Sign in at <http://localhost:3000/login> with the seeded admin. The seed forces a password reset on first login (UI for that lands in the next commit; for now you can update directly in `npx prisma studio`).
+If you've upgraded a previously-running checkout and the browser is showing stale errors (especially the Edge runtime "Node 'crypto' module" error), wipe the Next.js cache and restart:
+
+```bash
+rm -rf .next
+npm run dev
+```
+
+Sign in at <http://localhost:3000/login> with the seeded admin. The seed sets `forcePasswordReset = true`, so the first login redirects to `/setup/password`. After resetting, MFA-required roles redirect to `/setup/mfa`.
+
+### Verification
+
+```bash
+npx prisma validate      # schema parses
+npx prisma generate      # client regenerates
+npm run typecheck        # tsc --noEmit, strict + exactOptionalPropertyTypes
+npm test                 # vitest (unit tests, no DB needed)
+```
+
+### Fully-Dockerized dev (optional)
+
+To run the app inside Docker as well as the database, populate `.env` (Compose's default) and pass the `full` profile:
+
+```bash
+cp .env.example .env  # edit secrets
+docker compose --profile full up --build
+```
 
 ## Project layout
 

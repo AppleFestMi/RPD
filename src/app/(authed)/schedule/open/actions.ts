@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireActor } from "@/lib/auth/session";
 import { requirePermission } from "@/lib/permissions/check";
@@ -224,7 +225,7 @@ export async function approvePickup(input: z.infer<typeof REVIEW>) {
   }
 
   // Apply: create or upgrade assignment for the parent shift; close open posting.
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     if (open.shiftId) {
       await tx.scheduleAssignment.create({
         data: {

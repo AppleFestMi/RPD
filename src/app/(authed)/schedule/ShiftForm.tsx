@@ -155,8 +155,11 @@ function Field({
   label: string;
   type?: string;
   required?: boolean;
-  defaultValue?: string;
-  placeholder?: string;
+  // Explicit `| undefined` is required because the parent passes
+  // `defaultValue={x ?? ""}` from possibly-undefined fields and
+  // exactOptionalPropertyTypes forbids implicit undefined assignment.
+  defaultValue?: string | undefined;
+  placeholder?: string | undefined;
 }) {
   return (
     <label className="block">

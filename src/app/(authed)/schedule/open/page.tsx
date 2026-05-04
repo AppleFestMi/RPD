@@ -113,11 +113,15 @@ export default async function OpenShiftsPage() {
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   {canApply && o.status === "open" && eligible && !isClosed ? (
-                    <OpenShiftCardActions
-                      kind={myApp && myApp.decision !== "withdrawn" ? "withdraw" : "apply"}
-                      openShiftId={o.id}
-                      applicationId={myApp?.id}
-                    />
+                    myApp && myApp.decision !== "withdrawn" ? (
+                      <OpenShiftCardActions
+                        kind="withdraw"
+                        openShiftId={o.id}
+                        applicationId={myApp.id}
+                      />
+                    ) : (
+                      <OpenShiftCardActions kind="apply" openShiftId={o.id} />
+                    )
                   ) : null}
                   {canApprove && o.status === "open" ? (
                     <OpenShiftCardActions kind="close" openShiftId={o.id} />

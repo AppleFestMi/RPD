@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireActor } from "@/lib/auth/session";
 import { requirePermission } from "@/lib/permissions/check";
@@ -204,7 +205,7 @@ export async function approveSwap(input: z.infer<typeof REVIEW>) {
     return { ok: false as const, error: "Replacement user has a conflicting assignment." };
   }
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Remove requester from original shift.
     await tx.scheduleAssignment.updateMany({
       where: {

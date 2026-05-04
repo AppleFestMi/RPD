@@ -11,7 +11,7 @@ import {
 
 type Props =
   | { kind: "apply"; openShiftId: string }
-  | { kind: "withdraw"; openShiftId: string; applicationId?: string }
+  | { kind: "withdraw"; openShiftId: string; applicationId: string }
   | { kind: "close"; openShiftId: string }
   | { kind: "review"; applicationId: string };
 
@@ -40,7 +40,7 @@ export function OpenShiftCardActions(props: Props) {
     );
   }
 
-  if (props.kind === "withdraw" && props.applicationId) {
+  if (props.kind === "withdraw") {
     const id = props.applicationId;
     return (
       <button

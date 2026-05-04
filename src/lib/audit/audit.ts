@@ -8,10 +8,15 @@
  *   - Failures THROW. A request whose audit cannot be written must fail.
  */
 import "server-only";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { redact } from "@/lib/security/redact";
-import type { AuditResult } from "@prisma/client";
 import type { EventType } from "./events";
+
+// Mirror the schema enum as a local string union. Avoids depending on a
+// specific Prisma export shape that has shifted across releases (sometimes
+// at the top level, sometimes via Prisma.$Enums).
+type AuditResult = "success" | "failure" | "denied";
 
 const MAX_METADATA_BYTES = 8 * 1024;
 
@@ -37,7 +42,7 @@ export async function auditLog(input: AuditInput): Promise<void> {
   const safeMetadata = input.metadata ? redact(input.metadata) : null;
 
   // Cap payload size to avoid runaway rows.
-  let metadata: unknown = safeMetadata;
+  let metadata: Prisma.InputJsonValue | typeof Prisma.JsonNull = Prisma.JsonNull;
   if (safeMetadata) {
     const json = JSON.stringify(safeMetadata);
     if (json.length > MAX_METADATA_BYTES) {
@@ -46,6 +51,8 @@ export async function auditLog(input: AuditInput): Promise<void> {
         reason: "metadata exceeded MAX_METADATA_BYTES",
         sampleKeys: Object.keys(safeMetadata).slice(0, 32),
       };
+    } else {
+      metadata = safeMetadata as Prisma.InputJsonValue;
     }
   }
 
@@ -61,7 +68,6 @@ export async function auditLog(input: AuditInput): Promise<void> {
       action: input.action ?? deriveAction(input.eventType),
       result: input.result,
       requestId: input.requestId ?? null,
-      // @ts-expect-error Prisma Json typing accepts unknown
       metadata,
     },
   });

@@ -15,9 +15,13 @@
  */
 
 export function newRequestId(): string {
-  const c = globalThis.crypto;
-  if (c?.randomUUID) return c.randomUUID();
-  if (c?.getRandomValues) return uuidV4FromRandom(c);
+  // The lib types declare globalThis.crypto as required, but at runtime
+  // we treat it as possibly undefined (older or unusual runtimes). The
+  // explicit widening prevents the "condition always true" diagnostic
+  // and keeps the fallback paths reachable.
+  const c = (globalThis as { crypto?: Crypto }).crypto;
+  if (typeof c?.randomUUID === "function") return c.randomUUID();
+  if (typeof c?.getRandomValues === "function") return uuidV4FromRandom(c);
   // No random source. We deliberately fail loudly rather than emit a
   // predictable ID; the request would otherwise be untraceable.
   throw new Error("No Web Crypto random source available for request IDs.");

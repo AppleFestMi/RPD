@@ -38,10 +38,11 @@ async function main() {
 
   console.warn("Seeding permissions...");
   for (const p of PERMISSION_CATALOG) {
+    const description = p.description ?? null;
     await prisma.permission.upsert({
       where: { key: p.key },
-      update: { label: p.label, description: p.description ?? null },
-      create: { key: p.key, label: p.label, description: p.description ?? null },
+      update: { label: p.label, description },
+      create: { key: p.key, label: p.label, description },
     });
   }
 

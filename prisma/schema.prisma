@@ -504,14 +504,12 @@ model OpenShiftApplication {
   @@index([userId])
 }
 
-/**
- * Shift swap request states (richer than the generic AppDecision):
- *   submitted              — initial state
- *   acceptedByReplacement  — proposed replacement user has accepted
- *   supervisorReview       — awaiting final approval
- *   approved / denied      — terminal
- *   cancelled              — withdrawn by requester or admin
- */
+// Shift swap request states (richer than the generic AppDecision):
+//   submitted              — initial state
+//   acceptedByReplacement  — proposed replacement user has accepted
+//   supervisorReview       — awaiting final approval
+//   approved / denied      — terminal
+//   cancelled              — withdrawn by requester or admin
 enum SwapStatus {
   submitted
   acceptedByReplacement
@@ -521,11 +519,9 @@ enum SwapStatus {
   cancelled
 }
 
-/**
- * Spec terms vs columns: requesterId = fromUserId, replacementUserId = toUserId,
- * originalShiftId = fromShiftId, replacementShiftId = toShiftId (optional;
- * null means a one-way coverage request, not a 1-for-1 swap).
- */
+// Spec terms vs columns: requesterId = fromUserId, replacementUserId = toUserId,
+// originalShiftId = fromShiftId, replacementShiftId = toShiftId (optional;
+// null means a one-way coverage request, not a 1-for-1 swap).
 model ShiftSwapRequest {
   id            String      @id @default(cuid())
   fromUserId    String

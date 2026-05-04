@@ -2,6 +2,7 @@
 
 import { headers } from "next/headers";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireActor } from "@/lib/auth/session";
 import { auditLog } from "@/lib/audit/audit";
@@ -145,7 +146,7 @@ export async function completeMfaSetup(
   // the user in a consistent (still-pre-MFA) state.
   const codes = await generateBackupCodes();
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Wipe any prior backup codes (e.g. from a previous attempt).
     await tx.backupCode.deleteMany({ where: { userId: actor.userId } });
     await tx.backupCode.createMany({

@@ -54,8 +54,8 @@ function Field({
   label: string;
   name: string;
   type: string;
-  autoComplete?: string;
-  hint?: string;
+  autoComplete?: string | undefined;
+  hint?: string | undefined;
 }) {
   return (
     <label className="block">

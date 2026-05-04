@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit/audit";
 import { EVENTS } from "@/lib/audit/events";
 import { AuditClient } from "./AuditClient";
-import { buildWhere } from "./actions";
+import { buildWhere } from "./where";
 
 export const dynamic = "force-dynamic";
 

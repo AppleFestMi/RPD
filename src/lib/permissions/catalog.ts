@@ -13,9 +13,12 @@
  * Never read permission strings from user-typed input.
  */
 
-export type PermissionKey = (typeof PERMISSION_CATALOG)[number]["key"];
-
-export const PERMISSION_CATALOG = [
+// Internal raw catalog: as-const so the precise key string-literal union
+// can be derived for `PermissionKey`. The exported `PERMISSION_CATALOG`
+// is widened to allow an optional `description`, so seed/admin code can
+// safely reach for it without TypeScript complaining that the property
+// doesn't exist on every entry.
+const _RAW_CATALOG = [
   // Schedule
   { key: "schedule.read",            label: "Read schedule" },
   { key: "schedule.create",          label: "Create schedule entries" },
@@ -77,7 +80,17 @@ export const PERMISSION_CATALOG = [
   // Audit
   { key: "audit.read",               label: "Read audit log" },
   { key: "audit.export",             label: "Export audit log" },
-] as const satisfies readonly { key: string; label: string; description?: string }[];
+] as const;
+
+export type PermissionKey = (typeof _RAW_CATALOG)[number]["key"];
+
+export type PermissionCatalogEntry = {
+  readonly key: PermissionKey;
+  readonly label: string;
+  readonly description?: string;
+};
+
+export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = _RAW_CATALOG;
 
 /**
  * Default role → permission mapping. The seed script writes these to
@@ -243,7 +256,7 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
     key: "systemAdmin",
     label: "System Admin",
     description: "IT/system administrator. Manages roles, settings, MFA resets.",
-    permissions: PERMISSION_CATALOG.map((p) => p.key) as PermissionKey[],
+    permissions: PERMISSION_CATALOG.map((p) => p.key),
   },
   {
     key: "auditorReadOnly",

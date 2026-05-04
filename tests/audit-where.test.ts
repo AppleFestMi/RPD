@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildWhere } from "@/app/(authed)/admin/audit/actions";
+import { buildWhere } from "@/app/(authed)/admin/audit/where";
 
 describe("audit filter where-builder", () => {
   it("returns an empty filter when no fields are set", () => {

@@ -227,8 +227,8 @@ function Field({
   name: string;
   label: string;
   type?: string;
-  defaultValue?: string;
-  placeholder?: string;
+  defaultValue?: string | undefined;
+  placeholder?: string | undefined;
 }) {
   return (
     <label className="block">

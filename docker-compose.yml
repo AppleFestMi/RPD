@@ -2,6 +2,17 @@
 # Brings up the app + Postgres on a private network.
 # Postgres is bound to 127.0.0.1 only — never to a public address.
 # For production, use docker-compose.prod.yml.
+#
+# Most developers run only the database in Docker (`docker compose up -d db`)
+# and run Next.js on the host (`npm run dev`). The `app` service is for
+# fully-Dockerized dev. Either way:
+#
+#   1. Copy .env.example → .env (Compose's default) for the `app` service.
+#   2. .env.local is loaded automatically by Next.js when running on the host.
+#
+# The `app` service uses `env_file: .env` so the file does not need to be
+# exported into your shell. If .env is missing, only the `app` service
+# fails — the `db` service still runs.
 
 services:
   db:
@@ -26,18 +37,24 @@ services:
     networks: [internal]
 
   app:
+    profiles: [full]
     build:
       context: .
       dockerfile: Dockerfile
     container_name: rpd-app
     restart: unless-stopped
+    # Loaded at compose-up time. .env is the Compose default; it's not
+    # committed (see .gitignore). Copy from .env.example.
+    # `required: false` (Compose v2.24+) lets `docker compose up -d db`
+    # validate this file even when .env is absent.
+    env_file:
+      - path: .env
+        required: false
     environment:
+      # These take precedence over env_file values for the same keys.
       NODE_ENV: development
       DATABASE_URL: postgresql://rpdops:rpdops_dev_pw@db:5432/rpdops?schema=public
       NEXTAUTH_URL: http://localhost:3000
-      # Generate locally: openssl rand -base64 48
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in .env.local}
-      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?set MFA_ENCRYPTION_KEY in .env.local}
       SESSION_IDLE_MS: "1800000"
       SESSION_ABSOLUTE_MS: "43200000"
       RATE_LIMIT_AUTH_PER_MIN: "10"

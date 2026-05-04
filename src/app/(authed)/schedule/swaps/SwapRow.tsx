@@ -77,11 +77,7 @@ export function SwapRow({
         ) : null}
 
         {viewer === "supervisor" && row.status !== "approved" && row.status !== "denied" ? (
-          <SupervisorActions
-            swapId={row.id}
-            onError={setError}
-            onPending={(p) => p}
-          />
+          <SupervisorActions swapId={row.id} onError={setError} />
         ) : null}
       </div>
 
@@ -96,7 +92,6 @@ function SupervisorActions({
 }: {
   swapId: string;
   onError: (e: string | null) => void;
-  onPending: (p: boolean) => void;
 }) {
   const [pending, start] = useTransition();
   const [showApprove, setShowApprove] = useState(false);

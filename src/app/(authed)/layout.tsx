@@ -17,7 +17,7 @@ import Link from "next/link";
 import { requireActor } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { evaluateSetupGate } from "@/lib/auth/policy";
-import { can } from "@/lib/permissions/check";
+import { can, type ActorContext } from "@/lib/permissions/check";
 import { BoundaryNotice } from "@/components/BoundaryNotice";
 import { SignOutButton } from "./SignOutButton";
 
@@ -73,12 +73,12 @@ export default async function AuthedLayout({ children }: { children: React.React
   );
 }
 
-function NavLinks({ actor }: { actor: { permissionKeys: string[] } }) {
+function NavLinks({ actor }: { actor: ActorContext }) {
   const links: Array<{ href: string; label: string; show: boolean }> = [
     { href: "/dashboard",       label: "Dashboard",  show: true },
-    { href: "/admin/users",     label: "Users",      show: can(actor as never, "admin.users.manage") },
-    { href: "/admin/roles",     label: "Roles",      show: can(actor as never, "admin.roles.manage") },
-    { href: "/admin/audit",     label: "Audit",      show: can(actor as never, "audit.read") },
+    { href: "/admin/users",     label: "Users",      show: can(actor, "admin.users.manage") },
+    { href: "/admin/roles",     label: "Roles",      show: can(actor, "admin.roles.manage") },
+    { href: "/admin/audit",     label: "Audit",      show: can(actor, "audit.read") },
   ];
   return (
     <nav className="flex items-center gap-4 text-sm">

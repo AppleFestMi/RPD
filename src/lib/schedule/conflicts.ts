@@ -78,7 +78,11 @@ export function validateShiftTimes(input: {
   shiftId?: string;
 }): Conflict | null {
   if (input.endMinute <= input.startMinute) {
-    return { kind: "shift-end-before-start", shiftId: input.shiftId };
+    // Build the result without a `shiftId` key when the caller didn't
+    // supply one. exactOptionalPropertyTypes forbids `shiftId: undefined`.
+    return input.shiftId !== undefined
+      ? { kind: "shift-end-before-start", shiftId: input.shiftId }
+      : { kind: "shift-end-before-start" };
   }
   return null;
 }

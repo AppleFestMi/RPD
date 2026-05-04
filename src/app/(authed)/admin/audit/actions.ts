@@ -7,6 +7,7 @@ import { requireActor } from "@/lib/auth/session";
 import { ForbiddenError, requirePermission } from "@/lib/permissions/check";
 import { auditLog } from "@/lib/audit/audit";
 import { EVENTS } from "@/lib/audit/events";
+import { buildWhere } from "./where";
 
 const EXPORT_SCHEMA = z.object({
   /** Mirrors the page filter so the audit row is meaningful. */
@@ -77,16 +78,3 @@ export async function requestAuditExport(
   return { ok: true, rowCount };
 }
 
-export function buildWhere(filter: z.infer<typeof EXPORT_SCHEMA>) {
-  const where: Parameters<typeof prisma.auditLog.findMany>[0] = {};
-  const and: Array<NonNullable<typeof where>["AND"]> = [];
-  const conds: Array<Record<string, unknown>> = [];
-  if (filter.from) conds.push({ createdAt: { gte: new Date(filter.from) } });
-  if (filter.to) conds.push({ createdAt: { lte: new Date(filter.to) } });
-  if (filter.eventType) conds.push({ eventType: filter.eventType });
-  if (filter.result) conds.push({ result: filter.result });
-  if (filter.actorUserId) conds.push({ actorUserId: filter.actorUserId });
-  if (filter.entityType) conds.push({ entityType: filter.entityType });
-  if (conds.length === 0) return {};
-  return { AND: conds };
-}
