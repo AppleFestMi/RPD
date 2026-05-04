@@ -165,8 +165,6 @@ a:hover { text-decoration: underline; }
   background: rgba(255,255,255,.05);
   color: #fff;
 }
-.sb-nav li:hover .pin-btn { opacity: 1 !important; }
-.sb-nav li .pin-btn:hover { color: #ffd166 !important; }
 .sb-nav li.active button {
   background: rgba(255,255,255,.08);
   color: #fff;
@@ -992,28 +990,11 @@ a:hover { text-decoration: underline; }
 
 /* ── Demo build overrides ─────────────────────────────────────────── */
 
-/* Sidebar must scroll when groups + pinned exceed viewport. */
+/* Sidebar must scroll when groups exceed viewport. */
 .sb { overflow-y: auto; overscroll-behavior: contain; }
 .sb::-webkit-scrollbar { width: 8px; }
 .sb::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 4px; }
 .sb::-webkit-scrollbar-track { background: transparent; }
-
-/* Pinned item unpin button (always visible, gold) */
-.sb-nav .unpin-btn {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  color: #ffd166;
-  padding: 2px;
-  display: flex;
-  opacity: .85;
-}
-.sb-nav .unpin-btn:hover { opacity: 1; color: #ffe08a; }
-.sb-nav li.has-unpin button { padding-right: 28px; }
 
 /* Mobile nav: hamburger + slide-in */
 .hdr .menu-btn {
@@ -5792,12 +5773,6 @@ function useNavState() {
     try { return new Set(JSON.parse(localStorage.getItem('rpd_nav_collapsed') || '[]')); }
     catch { return new Set(); }
   });
-  const [pinned, setPinned] = useState(() => {
-    try {
-      const v = JSON.parse(localStorage.getItem('rpd_nav_pinned') || 'null');
-      return v || ['dashboard','schedule','open','callback','passdown'];
-    } catch { return ['dashboard','schedule','open','callback','passdown']; }
-  });
   const toggleGroup = (label) => {
     setCollapsed(s => {
       const n = new Set(s);
@@ -5806,14 +5781,7 @@ function useNavState() {
       return n;
     });
   };
-  const togglePin = (id) => {
-    setPinned(arr => {
-      const n = arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id];
-      localStorage.setItem('rpd_nav_pinned', JSON.stringify(n));
-      return n;
-    });
-  };
-  return { collapsed, toggleGroup, pinned, togglePin };
+  return { collapsed, toggleGroup };
 }
 
 // ── Command palette ─────────────────────────────────────────
@@ -5892,7 +5860,7 @@ function App() {
   const [role, setRole] = useState(t.role || "Supervisor");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const { collapsed, toggleGroup, pinned, togglePin } = useNavState();
+  const { collapsed, toggleGroup } = useNavState();
   useEffect(() => { setRole(t.role); }, [t.role]);
   useEffect(() => { setMobileNavOpen(false); }, [screen]);
 
@@ -5984,36 +5952,6 @@ function App() {
             <kbd style={{fontFamily:'var(--font-mono)', fontSize:10, opacity:.7, padding:'1px 5px', background:'rgba(255,255,255,.08)', borderRadius:3}}>⌘K</kbd>
           </button>
 
-          {pinned.length > 0 && (
-            <>
-              <div className="sb-section">Pinned</div>
-              <ul className="sb-nav">
-                {pinned.map(pid => {
-                  const n = NAV.find(x => x.id === pid);
-                  if (!n) return null;
-                  const Icon = Icons[n.icon];
-                  const active = screen === n.id;
-                  const count = n.badge ? n.badge() : null;
-                  return (
-                    <li key={n.id} className={(active ? "active " : "") + "has-unpin"} style={{position:'relative'}}>
-                      <button onClick={() => setScreen(n.id)} style={{paddingRight: count ? 56 : 28}}>
-                        <Icon size={17}/>{n.label}
-                        {count ? <span className="badge" style={{marginRight: 22}}>{count}</span> : null}
-                      </button>
-                      <button
-                        className="unpin-btn"
-                        onClick={(e) => { e.stopPropagation(); togglePin(n.id); }}
-                        title="Unpin"
-                        aria-label={"Unpin " + n.label}>
-                        <Icons.Pin size={11} sw={2.2}/>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          )}
-
           {NAV_GROUPS.map(group => {
             const isCollapsed = collapsed.has(group.label);
             return (
@@ -6037,30 +5975,15 @@ function App() {
                 </button>
                 {!isCollapsed && (
                   <ul className="sb-nav">
-                    {group.items.filter(n => !pinned.includes(n.id)).map(n => {
+                    {group.items.map(n => {
                       const Icon = Icons[n.icon];
                       const active = screen === n.id;
                       const count = n.badge ? n.badge() : null;
-                      const isPinned = pinned.includes(n.id);
                       return (
-                        <li key={n.id} className={active ? "active" : ""} style={{position:'relative'}}>
+                        <li key={n.id} className={active ? "active" : ""}>
                           <button onClick={() => setScreen(n.id)}>
                             <Icon size={17}/>{n.label}
                             {count ? <span className="badge">{count}</span> : null}
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); togglePin(n.id); }}
-                            title={isPinned ? "Unpin" : "Pin"}
-                            style={{
-                              position:'absolute', right: count ? 38 : 8, top:'50%', transform:'translateY(-50%)',
-                              background:'transparent', border:'none', cursor:'pointer',
-                              color: isPinned ? '#ffd166' : 'rgba(255,255,255,.25)',
-                              padding:2, opacity: isPinned ? 1 : 0, transition:'opacity .12s',
-                              display:'flex',
-                            }}
-                            onMouseEnter={e => e.currentTarget.style.opacity = 1}
-                            className="pin-btn">
-                            <Icons.Pin size={11} sw={2.2}/>
                           </button>
                         </li>
                       );
