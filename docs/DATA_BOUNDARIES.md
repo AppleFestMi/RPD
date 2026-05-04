@@ -27,13 +27,25 @@ These are the kinds of records this system is designed to hold. All names below 
 
 ### 2.2 Schedule and availability
 
-- Shift definitions (day, time, post)
+- Shift definitions (day, time, post, administrative location)
 - Assignments (who is on which shift)
 - Open shifts, applications, approvals
 - Reserve availability blocks
 - Shift swap requests and approvals
 - Time-off requests and status
 - On-call rotation
+
+**Schedule notes are administrative only.** They describe coordination, not
+operational specifics. A note saying "Reserve coverage requested",
+"Training day", "Special event staffing", or "Court appearance — see
+official court system" is the right shape. A note containing a case
+number, a suspect/victim/witness name, BOLO content, plate-run results,
+investigation details, or dispatch call narratives is the wrong shape and
+will be rejected by the schedule note validator
+(`src/lib/schedule/notes.ts`). See §3 for the prohibited list. Court and
+training schedule entries must reference outside systems by name only —
+"see official court system", "see Training records" — never copy the
+sensitive content into the schedule.
 
 ### 2.3 Internal requests
 

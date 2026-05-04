@@ -315,7 +315,9 @@ model AnnouncementAcknowledgment {
 enum ShiftStatus {
   draft
   published
+  changed     // a previously-published shift was edited
   cancelled
+  archived    // soft-deleted by an admin
 }
 
 enum AssignmentStatus {
@@ -323,6 +325,7 @@ enum AssignmentStatus {
   open
   changed
   pending
+  removed     // assignment was withdrawn (e.g. on swap, on archive)
   cancelled
 }
 
@@ -348,8 +351,17 @@ model ScheduleShift {
   startMinute Int
   endMinute   Int
   category    String
+  // Optional location/post for the shift. Administrative geography only —
+  // never a victim/witness/incident address. See docs/DATA_BOUNDARIES.md.
+  location    String?
+  // Optional role gate for assignments to this shift (e.g. "officer",
+  // "reserveOfficer"). Matches a Role.key. Null means any role.
+  requiredRole String?
   status      ShiftStatus  @default(draft)
   publishedAt DateTime?
+  publishedById String?
+  archivedAt  DateTime?
+  archivedById String?
   notes       String?
 
   assignments ScheduleAssignment[]
@@ -363,25 +375,35 @@ model ScheduleShift {
   @@index([date])
   @@index([status])
   @@index([category, date])
+  @@index([archivedAt])
 }
 
 model ScheduleAssignment {
   id        String           @id @default(cuid())
   shiftId   String
   userId    String?
+  // Optional sub-role within the shift, e.g. "lead", "trainee", "k9".
+  // Free-text label, not a security control.
+  assignmentRole String?
   status    AssignmentStatus @default(scheduled)
   notes     String?
 
   shift     ScheduleShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
   user      User?         @relation("AssignedUser", fields: [userId], references: [id])
 
+  // Tracking IDs. The "createdBy" pattern persists for parity with other
+  // tables; "assignedBy" is exposed as a clearer name in actions/audit.
   createdById String?
   updatedById String?
+  acceptedAt  DateTime?
+  removedAt   DateTime?
+  removedById String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@index([shiftId])
+  @@index([userId, status])
 }
 
 // Reserve and PT availability
@@ -400,6 +422,9 @@ model AvailabilityBlock {
   endMinute   Int
   state     AvailabilityState
   notes     String?
+  // Free-text only for MVP. We deliberately do NOT parse this — turning
+  // it into structured RRULE behavior is out of scope for this iteration.
+  recurrenceText String?
 
   user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -420,6 +445,7 @@ enum OpenShiftType {
 
 enum OpenShiftStatus {
   open
+  closed     // admin closed posting (e.g. coverage no longer needed)
   filled
   cancelled
 }
@@ -435,15 +461,21 @@ model OpenShift {
   location  String?
   notes     String?
   type      OpenShiftType
+  // Optional eligibility gate (matches a Role.key). UI hides the apply
+  // button for users without the role; the server action enforces it.
+  eligibilityRole String?
   status    OpenShiftStatus @default(open)
+  closesAt  DateTime?       // application window cutoff
 
   applications OpenShiftApplication[]
 
   createdById String?
+  postedAt    DateTime  @default(now())
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   @@index([status, date])
+  @@index([closesAt])
 }
 
 enum AppDecision {
@@ -472,13 +504,36 @@ model OpenShiftApplication {
   @@index([userId])
 }
 
+/**
+ * Shift swap request states (richer than the generic AppDecision):
+ *   submitted              — initial state
+ *   acceptedByReplacement  — proposed replacement user has accepted
+ *   supervisorReview       — awaiting final approval
+ *   approved / denied      — terminal
+ *   cancelled              — withdrawn by requester or admin
+ */
+enum SwapStatus {
+  submitted
+  acceptedByReplacement
+  supervisorReview
+  approved
+  denied
+  cancelled
+}
+
+/**
+ * Spec terms vs columns: requesterId = fromUserId, replacementUserId = toUserId,
+ * originalShiftId = fromShiftId, replacementShiftId = toShiftId (optional;
+ * null means a one-way coverage request, not a 1-for-1 swap).
+ */
 model ShiftSwapRequest {
   id            String      @id @default(cuid())
   fromUserId    String
   toUserId      String
   fromShiftId   String
-  toShiftId     String
-  decision      AppDecision @default(pending)
+  toShiftId     String?
+  status        SwapStatus  @default(submitted)
+  replacementAcceptedAt DateTime?
   decidedById   String?
   decidedAt     DateTime?
   reason        String?
@@ -491,6 +546,17 @@ model ShiftSwapRequest {
 
   @@index([fromUserId])
   @@index([toUserId])
+  @@index([status])
+}
+
+enum TimeOffType {
+  vacation
+  sick
+  bereavement
+  jury
+  military
+  unpaid
+  other
 }
 
 model TimeOffRequest {
@@ -498,6 +564,7 @@ model TimeOffRequest {
   userId      String
   startDate   DateTime
   endDate     DateTime
+  type        TimeOffType @default(other)
   reason      String?
   status      AppDecision @default(pending)
   decidedById String?
@@ -509,6 +576,7 @@ model TimeOffRequest {
   updatedAt DateTime @updatedAt
 
   @@index([userId, startDate])
+  @@index([status, startDate])
 }
 
 // ─────────────────────────────────────────────────────────────────────

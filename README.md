@@ -25,9 +25,22 @@ What is intentionally not yet implemented:
 - SMTP delivery of invitations — admin currently copy/pastes the activation URL. The hook is in place; only the mail step is missing.
 - Audit log CSV streaming — `requestAuditExport` enforces permission and audit-logs the request and any denial; the CSV body itself is the next thing to plug in.
 - Re-authentication challenge for high-risk admin actions — current MFA reset uses a typed-email confirmation. Re-auth (re-enter password) is the upgrade path.
-- Schedule, requests, training, announcements, policies, equipment, vehicles, events, directory feature modules.
+- Time-off **submission and approval UX** — model exists and approved time-off surfaces as a schedule conflict warning. Full request flow lands with the Requests module.
+- Requests, training, announcements, policies, equipment, vehicles, events, directory feature modules.
 - File attachment upload pipeline (schema present, route handler pending).
 - Multi-instance backing store for in-progress MFA enrollment (today: in-memory; fine for one VPS, not for a horizontally-scaled deploy).
+
+**Scheduling module (live in this build):**
+
+- Week calendar at `/schedule` with day cards, status chips, category filters, "My schedule" toggle, week navigation
+- Add / edit / archive shifts (with administrative-notes validator that rejects case/incident/CJI/subject references)
+- Publish week flow at `/schedule/publish` showing draft / changed / unstaffed counts; idempotent and audit-logged with shift IDs
+- Open shifts board at `/schedule/open` — create, apply, withdraw, supervisor approve/deny, close
+- Reserve availability at `/schedule/availability` — manage own (Available/Preferred/Unavailable) plus admin aggregate summary
+- Shift swaps at `/schedule/swaps` — three-stage flow: requester → replacement accept/decline → supervisor approve/deny
+- Time-off list at `/schedule/timeoff` — read-only; approved time-off surfaces as a conflict warning when assigning users
+- Print Daily Roster at `/schedule-print/<YYYY-MM-DD>` — no nav, no notes, print CSS
+- Conflict warnings: double-booking, approved-time-off overlap, applicant-already-assigned, replacement-already-assigned, end-before-start, open-shift-already-filled
 
 The single-file demo from the prototype phase lives at [`prototype/index.html`](prototype/index.html). It is reference only, not the deployed system.
 
@@ -113,6 +126,17 @@ npm run db:seed           # Idempotent seed of permissions/roles + bootstrap adm
 4. From `/admin/users/new`, invite the rest of the staff. Hand each user the activation URL via department email.
 5. Each invitee activates at `/activate/<token>`, sets a password, accepts the boundary notice, then enrolls MFA if their role requires it.
 6. `/admin/audit` should already show login successes, MFA setups, role grants. That's the live-pilot smoke test passing.
+
+To populate fictional schedule data for development:
+
+```bash
+SEED_ADMIN_EMAIL=admin@example.gov \
+SEED_ADMIN_PASSWORD='ChangeMeImmediately123!' \
+SEED_SCHEDULE=1 \
+  npm run db:seed
+```
+
+This creates one week of patrol/dispatch/reserve/training/special-event/court shifts plus two open shifts and three availability blocks for the seed admin. It is idempotent — re-runs replace prior **draft** shifts in the same week, never touching published rows.
 
 ## Deploying
 
