@@ -49,8 +49,9 @@ export default async function DashboardPage() {
   const weekStart = startOfWeek(now);
   const weekEnd = addDays(weekStart, 7);
 
-  const canSeeAllRequests = can(actor, "requests.read.all");
   const canApprovePickup = can(actor, "schedule.approvePickup");
+  const canApproveRequests =
+    can(actor, "requests.approve.supervisor") || can(actor, "requests.approve.command");
   const canSeeAudit = can(actor, "audit.read");
 
   // Pull dashboard data in parallel. Everything here is a count or a
@@ -63,6 +64,8 @@ export default async function DashboardPage() {
     pendingPickups,
     last24hAuditCount,
     user,
+    myOpenRequestCount,
+    pendingRequestApprovalCount,
   ] = await Promise.all([
     prisma.scheduleAssignment.findFirst({
       where: {
@@ -96,6 +99,20 @@ export default async function DashboardPage() {
       where: { id: actor.userId },
       select: { name: true, rank: true, badge: true },
     }),
+    prisma.adminRequest.count({
+      where: {
+        userId: actor.userId,
+        status: { in: ["submitted", "supervisorReview", "commandReview", "needsMoreInfo"] },
+      },
+    }),
+    canApproveRequests
+      ? prisma.adminRequest.count({
+          where: {
+            userId: { not: actor.userId },
+            status: { in: ["submitted", "supervisorReview", "commandReview", "needsMoreInfo"] },
+          },
+        })
+      : Promise.resolve(0),
   ]);
 
   // The dashboard view is itself an audit-relevant event (admin surface
@@ -179,20 +196,29 @@ export default async function DashboardPage() {
           trailing={<Icon.Calendar size={18} />}
           tone={draftThisWeek > 0 ? "warn" : "ok"}
         />
-        {canApprovePickup ? (
+        {canApproveRequests ? (
           <StatCard
-            label="Pickup applications"
-            value={pendingPickups}
-            sub={pendingPickups > 0 ? "Awaiting your decision" : "Nothing pending"}
+            label="Awaiting your decision"
+            value={pendingRequestApprovalCount + pendingPickups}
+            sub={
+              pendingRequestApprovalCount + pendingPickups > 0
+                ? `${pendingRequestApprovalCount} requests · ${pendingPickups} pickups`
+                : "Nothing pending"
+            }
             trailing={<Icon.Inbox size={18} />}
-            tone={pendingPickups > 0 ? "pending" : "neutral"}
+            tone={pendingRequestApprovalCount + pendingPickups > 0 ? "pending" : "neutral"}
           />
         ) : (
           <StatCard
-            label="My recent activity"
-            value="—"
-            sub="Module pending"
-            trailing={<Icon.Activity size={18} />}
+            label="My open requests"
+            value={myOpenRequestCount}
+            sub={
+              myOpenRequestCount > 0
+                ? "Time-off, training, equipment, etc."
+                : "Nothing in flight"
+            }
+            trailing={<Icon.Inbox size={18} />}
+            tone={myOpenRequestCount > 0 ? "info" : "neutral"}
           />
         )}
       </section>
@@ -297,28 +323,34 @@ export default async function DashboardPage() {
                 icon={<Icon.Clock size={16} />}
               />
               <QuickActionButton
-                href="/schedule/timeoff"
-                label="Time off"
-                description="View status of requests"
+                href="/requests/time-off/new"
+                label="Request time off"
+                description="Vacation, sick, jury, etc."
                 icon={<Icon.FileText size={16} />}
               />
               <QuickActionButton
-                href="/training"
+                href="/requests/training/new"
                 label="Request training"
-                description="Module pending"
+                description="Outside courses & certifications"
                 icon={<Icon.Award size={16} />}
               />
               <QuickActionButton
-                href="/vehicles"
+                href="/requests/vehicle-issue/new"
                 label="Report vehicle issue"
-                description="Module pending"
+                description="Mechanical or service issue"
                 icon={<Icon.Car size={16} />}
               />
-              {canSeeAllRequests ? (
+              <QuickActionButton
+                href="/requests"
+                label="My requests"
+                description={`${myOpenRequestCount} open`}
+                icon={<Icon.Inbox size={16} />}
+              />
+              {canApproveRequests ? (
                 <QuickActionButton
-                  href="/requests"
+                  href="/requests/approvals"
                   label="Approval queue"
-                  description="All pending requests"
+                  description={`${pendingRequestApprovalCount} request${pendingRequestApprovalCount === 1 ? "" : "s"} awaiting`}
                   icon={<Icon.Inbox size={16} />}
                 />
               ) : null}

@@ -92,7 +92,10 @@ export const EVENTS = {
   REQUEST_COMMENTED:             "request.commented",
   REQUEST_APPROVED:              "request.approved",
   REQUEST_DENIED:                "request.denied",
+  REQUEST_NEEDS_INFO:            "request.needs_more_info",
+  REQUEST_COMPLETED:             "request.completed",
   REQUEST_CANCELLED:             "request.cancelled",
+  HELP_REQUESTED:                "help.requested",
 
   // Announcements
   ANNOUNCEMENT_CREATED:          "announcement.created",

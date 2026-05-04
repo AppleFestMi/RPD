@@ -541,6 +541,9 @@ model ShiftSwapRequest {
   fromUser User @relation("SwapFrom", fields: [fromUserId], references: [id])
   toUser   User @relation("SwapTo", fields: [toUserId], references: [id])
 
+  // Optional back-link for the unified Requests inbox.
+  adminRequest AdminRequest?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -571,6 +574,12 @@ model TimeOffRequest {
   decidedAt   DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Back-link to the unified inbox row when this time-off was submitted
+  // through the Requests module. The schedule conflict detector continues
+  // to query TimeOffRequest.status directly, so approve flows must update
+  // both rows in lockstep.
+  adminRequest AdminRequest?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -612,7 +621,10 @@ model AdminRequest {
   decidedById String?
   decidedAt   DateTime?
 
-  // Discriminator-friendly references; populated when relevant.
+  // Discriminator-friendly references; populated when relevant. The
+  // AdminRequest is the unified inbox row — type-specific fields live
+  // on the child model. For IT/facilities and other generic kinds the
+  // description on AdminRequest itself carries the body.
   trainingRequestId  String?           @unique
   trainingRequest    TrainingRequest?  @relation(fields: [trainingRequestId], references: [id])
   equipmentRequestId String?           @unique
@@ -620,7 +632,9 @@ model AdminRequest {
   vehicleIssueId     String?           @unique
   vehicleIssue       VehicleIssue?     @relation(fields: [vehicleIssueId], references: [id])
   timeOffRequestId   String?           @unique
+  timeOffRequest     TimeOffRequest?   @relation(fields: [timeOffRequestId], references: [id])
   shiftSwapRequestId String?           @unique
+  shiftSwapRequest   ShiftSwapRequest? @relation(fields: [shiftSwapRequestId], references: [id])
 
   user User @relation("RequestActor", fields: [userId], references: [id])
 
