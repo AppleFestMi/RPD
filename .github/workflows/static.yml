@@ -1,5 +1,12 @@
-# Simple workflow for deploying static content to GitHub Pages
-name: Deploy static content to Pages
+# GitHub Pages deploy.
+#
+# Publishes ONLY the /prototype directory. The production application lives
+# in the repo under src/, prisma/, etc. and is deployed to a hardened VPS,
+# not to Pages. See docs/DEPLOYMENT_HARDENING.md.
+#
+# The demo URL (https://applefestmi.github.io/RPD/) continues to serve the
+# prototype index.html as before.
+name: Deploy prototype to Pages
 
 on:
   # Runs on pushes targeting the default branch
@@ -36,8 +43,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload entire repository
-          path: '.'
+          # Publish only the prototype, not the production source.
+          path: 'prototype'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5

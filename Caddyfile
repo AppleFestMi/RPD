@@ -1,0 +1,50 @@
+# Production reverse proxy.
+# Replace ops.example.gov with the department's actual hostname.
+# Caddy will obtain and renew Let's Encrypt certs automatically.
+#
+# The application sets a strict Content-Security-Policy with a per-request
+# nonce in middleware; Caddy intentionally does NOT set CSP, so the app's
+# header is authoritative.
+
+{
+    email it@example.gov
+    # Set debug only when troubleshooting; otherwise default INFO.
+    # debug
+}
+
+ops.example.gov {
+    encode gzip zstd
+
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "geolocation=(), microphone=(), camera=(), interest-cohort=()"
+        Cross-Origin-Opener-Policy "same-origin"
+        Cross-Origin-Resource-Policy "same-origin"
+        # Strip server fingerprinting.
+        -Server
+        -X-Powered-By
+    }
+
+    # Health check should not be cached.
+    @health path /api/health /api/ready
+    header @health Cache-Control "no-store"
+
+    # Pass through to Next.js.
+    reverse_proxy app:3000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    log {
+        output file /data/access.log {
+            roll_size 50mb
+            roll_keep 14
+            roll_keep_for 168h
+        }
+        format json
+    }
+}

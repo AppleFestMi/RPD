@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --rpd-navy: #0f1d33;
+  --rpd-navy-2: #14253f;
+  --rpd-accent: #2f6fd6;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: #f4f6fa;
+  color: #11243f;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}

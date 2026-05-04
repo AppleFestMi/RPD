@@ -1,0 +1,58 @@
+# Local development.
+# Brings up the app + Postgres on a private network.
+# Postgres is bound to 127.0.0.1 only — never to a public address.
+# For production, use docker-compose.prod.yml.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: rpd-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rpdops
+      POSTGRES_PASSWORD: rpdops_dev_pw
+      POSTGRES_DB: rpdops
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Dev convenience: expose to localhost only so you can use Prisma Studio.
+    # Remove this in any non-dev environment.
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rpdops -d rpdops"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rpd-app
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://rpdops:rpdops_dev_pw@db:5432/rpdops?schema=public
+      NEXTAUTH_URL: http://localhost:3000
+      # Generate locally: openssl rand -base64 48
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in .env.local}
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?set MFA_ENCRYPTION_KEY in .env.local}
+      SESSION_IDLE_MS: "1800000"
+      SESSION_ABSOLUTE_MS: "43200000"
+      RATE_LIMIT_AUTH_PER_MIN: "10"
+      LOG_LEVEL: debug
+      TRUST_PROXY: "0"
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+volumes:
+  pgdata:
+
+networks:
+  internal:
+    driver: bridge

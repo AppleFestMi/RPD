@@ -1,0 +1,102 @@
+# Production stack.
+# - Caddy terminates TLS (auto Let's Encrypt) and reverse-proxies to the app.
+# - Postgres is internal-only: NO ports: mapping. Reachable only on the docker network.
+# - Secrets are loaded from /srv/rpd-ops/.env.production (root:rpdadmin 0640).
+#
+# Deploy:
+#   git pull
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d --remove-orphans
+#   docker compose -f docker-compose.prod.yml exec app npx prisma migrate deploy
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: rpd-caddy
+    restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    read_only: true
+    tmpfs:
+      - /tmp
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    networks: [edge, internal]
+
+  app:
+    image: rpd-internal-ops:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rpd-app
+    restart: unless-stopped
+    env_file:
+      - /srv/rpd-ops/.env.production
+    environment:
+      NODE_ENV: production
+      TRUST_PROXY: "1"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges=true
+    networks: [internal]
+
+  db:
+    image: postgres:16-alpine
+    container_name: rpd-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rpdops
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      POSTGRES_DB: rpdops
+    secrets:
+      - db_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rpdops -d rpdops"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt:
+      - no-new-privileges=true
+    # NO ports mapping. Internal only.
+    networks: [internal]
+
+secrets:
+  db_password:
+    file: /srv/rpd-ops/secrets/db_password
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  edge:
+    driver: bridge
+  internal:
+    driver: bridge
+    internal: false # app must reach db; caddy must reach app — both via this net

@@ -1,0 +1,840 @@
+// Prisma schema — RPD Internal Ops
+// See /docs/SECURITY_MODEL.md for the design and DATA_BOUNDARIES.md for the
+// content rules. This schema deliberately omits any field that would imply
+// CAD/RMS/CJI content. If a future feature requests one, push back to design
+// before adding it.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Identity, RBAC
+// ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id                  String    @id @default(cuid())
+  email               String    @unique
+  // Display name + rank label. NEVER store personal contact info beyond
+  // department-issued contact methods.
+  name                String
+  rank                String?
+  badge               String?   @unique
+  assignment          String?
+
+  // Local password auth. Argon2id hash. Empty string means no local password
+  // (e.g. user is OIDC-only).
+  passwordHash        String    @default("")
+
+  // MFA. Secret is encrypted at rest (envelope-encrypted via MFA_ENCRYPTION_KEY).
+  mfaEnabled          Boolean   @default(false)
+  mfaSecretEncrypted  String?   // base64(ciphertext)
+  mfaBackupCodesHash  String[]  @default([]) // argon2 hashes of single-use codes
+
+  // Lifecycle / lockout
+  disabledAt          DateTime?
+  forcePasswordReset  Boolean   @default(false)
+  failedLoginCount    Int       @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
+  lastLoginIp         String?
+  invitedAt           DateTime?
+  activatedAt         DateTime?
+
+  // Roles via join table
+  roles               UserRole[]
+
+  // Auth.js (Prisma adapter) tables
+  accounts            Account[]
+  sessions            Session[]
+
+  // Domain back-refs (kept narrow; see relevant models for full lists)
+  shiftAssignments    ScheduleAssignment[]    @relation("AssignedUser")
+  availabilityBlocks  AvailabilityBlock[]
+  openShiftApps       OpenShiftApplication[]
+  swapRequestsFrom    ShiftSwapRequest[]      @relation("SwapFrom")
+  swapRequestsTo      ShiftSwapRequest[]      @relation("SwapTo")
+  timeOffRequests     TimeOffRequest[]
+  adminRequests       AdminRequest[]          @relation("RequestActor")
+  trainingRecords     TrainingRecord[]
+  trainingRequests    TrainingRequest[]
+  policyAcks          PolicyAcknowledgment[]
+  vehicleIssues       VehicleIssue[]          @relation("ReportedBy")
+  equipmentRequests   EquipmentRequest[]      @relation("RequestedBy")
+  equipmentAssigned   EquipmentAssignment[]   @relation("AssignedTo")
+  announcementsAuthored Announcement[]        @relation("AnnouncementAuthor")
+  announcementAcks    AnnouncementAcknowledgment[]
+  fileUploads         FileAttachment[]        @relation("UploadedBy")
+  directoryProfile    DirectoryProfile?
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([disabledAt])
+  @@index([email])
+}
+
+model Role {
+  id          String          @id @default(cuid())
+  // Stable key — referenced from code. Examples: officer, supervisor, admin.
+  key         String          @unique
+  label       String
+  description String?
+  // System roles cannot be deleted.
+  isSystem    Boolean         @default(false)
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model UserRole {
+  userId    String
+  roleId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  grantedAt DateTime @default(now())
+  grantedBy String?
+
+  @@id([userId, roleId])
+  @@index([roleId])
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  // Stable key, e.g. "schedule.publish". The catalog in
+  // src/lib/permissions/catalog.ts is the source of truth; this table
+  // mirrors it so role grants can reference DB rows.
+  key         String           @unique
+  label       String
+  description String?
+
+  roles       RolePermission[]
+
+  createdAt   DateTime @default(now())
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  grantedAt    DateTime   @default(now())
+  grantedBy    String?
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Auth.js adapter tables
+// ─────────────────────────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  lastUsedAt   DateTime @default(now())
+  ip           String?
+  userAgent    String?
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit / security log
+// ─────────────────────────────────────────────────────────────────────
+
+enum AuditResult {
+  success
+  failure
+  denied
+}
+
+model AuditLog {
+  id                String   @id @default(cuid())
+  createdAt         DateTime @default(now())
+  actorUserId       String?
+  actorRoleSnapshot String[] @default([])
+  actorIp           String?
+  actorUserAgent    String?
+  eventType         String
+  entityType        String?
+  entityId          String?
+  action            String
+  result            AuditResult
+  requestId         String?
+  metadata          Json?
+
+  @@index([createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([result, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Department settings
+// ─────────────────────────────────────────────────────────────────────
+
+model DepartmentSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Announcements
+// ─────────────────────────────────────────────────────────────────────
+
+enum AudienceScope {
+  all
+  patrol
+  reserves
+  command
+  dispatch
+  supervisorsOnly
+}
+
+model Announcement {
+  id          String         @id @default(cuid())
+  title       String
+  body        String
+  category    String?
+  authorId    String
+  audience    AudienceScope  @default(all)
+  pinned      Boolean        @default(false)
+  publishedAt DateTime?
+  archivedAt  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  author      User           @relation("AnnouncementAuthor", fields: [authorId], references: [id])
+  acks        AnnouncementAcknowledgment[]
+
+  @@index([publishedAt])
+  @@index([audience])
+}
+
+model AnnouncementAcknowledgment {
+  id             String   @id @default(cuid())
+  announcementId String
+  userId         String
+  acknowledgedAt DateTime @default(now())
+
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Schedule
+// ─────────────────────────────────────────────────────────────────────
+
+enum ShiftStatus {
+  draft
+  published
+  cancelled
+}
+
+enum AssignmentStatus {
+  scheduled
+  open
+  changed
+  pending
+  cancelled
+}
+
+model ShiftTemplate {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  label       String
+  startMinute Int      // minutes since 00:00 (e.g. 420 = 07:00)
+  endMinute   Int      // may exceed 1440 to indicate overnight
+  category    String   // patrol, dispatch, reserve, command, sro, event
+  archivedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ScheduleShift {
+  id          String       @id @default(cuid())
+  date        DateTime     // calendar day, midnight UTC
+  templateId  String?
+  template    ShiftTemplate? @relation(fields: [templateId], references: [id])
+  // Denormalized snapshot for historical correctness when a template changes.
+  label       String
+  startMinute Int
+  endMinute   Int
+  category    String
+  status      ShiftStatus  @default(draft)
+  publishedAt DateTime?
+  notes       String?
+
+  assignments ScheduleAssignment[]
+  openShifts  OpenShift[]
+
+  createdById String?
+  updatedById String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([date])
+  @@index([status])
+  @@index([category, date])
+}
+
+model ScheduleAssignment {
+  id        String           @id @default(cuid())
+  shiftId   String
+  userId    String?
+  status    AssignmentStatus @default(scheduled)
+  notes     String?
+
+  shift     ScheduleShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user      User?         @relation("AssignedUser", fields: [userId], references: [id])
+
+  createdById String?
+  updatedById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([shiftId])
+}
+
+// Reserve and PT availability
+enum AvailabilityState {
+  available
+  preferred
+  unavailable
+}
+
+model AvailabilityBlock {
+  id        String            @id @default(cuid())
+  userId    String
+  date      DateTime
+  // 0..47 → 30-minute slots. Or pair (startMinute, endMinute).
+  startMinute Int
+  endMinute   Int
+  state     AvailabilityState
+  notes     String?
+
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([userId, date])
+}
+
+// Open shift board
+enum OpenShiftType {
+  ot
+  reserve
+  event
+  dispatch
+  other
+}
+
+enum OpenShiftStatus {
+  open
+  filled
+  cancelled
+}
+
+model OpenShift {
+  id        String         @id @default(cuid())
+  shiftId   String?
+  shift     ScheduleShift? @relation(fields: [shiftId], references: [id])
+  date      DateTime
+  startMinute Int
+  endMinute   Int
+  post      String
+  location  String?
+  notes     String?
+  type      OpenShiftType
+  status    OpenShiftStatus @default(open)
+
+  applications OpenShiftApplication[]
+
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, date])
+}
+
+enum AppDecision {
+  pending
+  approved
+  denied
+  withdrawn
+}
+
+model OpenShiftApplication {
+  id          String      @id @default(cuid())
+  openShiftId String
+  userId      String
+  decision    AppDecision @default(pending)
+  decidedById String?
+  decidedAt   DateTime?
+  comment     String?
+
+  openShift   OpenShift   @relation(fields: [openShiftId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([openShiftId, userId])
+  @@index([userId])
+}
+
+model ShiftSwapRequest {
+  id            String      @id @default(cuid())
+  fromUserId    String
+  toUserId      String
+  fromShiftId   String
+  toShiftId     String
+  decision      AppDecision @default(pending)
+  decidedById   String?
+  decidedAt     DateTime?
+  reason        String?
+
+  fromUser User @relation("SwapFrom", fields: [fromUserId], references: [id])
+  toUser   User @relation("SwapTo",   fields: [toUserId],   references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fromUserId])
+  @@index([toUserId])
+}
+
+model TimeOffRequest {
+  id          String      @id @default(cuid())
+  userId      String
+  startDate   DateTime
+  endDate     DateTime
+  reason      String?
+  status      AppDecision @default(pending)
+  decidedById String?
+  decidedAt   DateTime?
+
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, startDate])
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Admin requests (training, equipment, vehicle, IT/facilities, swap)
+// ─────────────────────────────────────────────────────────────────────
+
+enum RequestKind {
+  timeOff
+  training
+  shiftSwap
+  equipment
+  vehicleIssue
+  itFacilities
+}
+
+enum RequestStatus {
+  submitted
+  supervisorReview
+  commandReview
+  approved
+  denied
+  needsMoreInfo
+  cancelled
+}
+
+model AdminRequest {
+  id          String        @id @default(cuid())
+  userId      String        // requester
+  kind        RequestKind
+  title       String
+  description String
+  status      RequestStatus @default(submitted)
+  decidedById String?
+  decidedAt   DateTime?
+
+  // Discriminator-friendly references; populated when relevant.
+  trainingRequestId  String? @unique
+  trainingRequest    TrainingRequest? @relation(fields: [trainingRequestId], references: [id])
+  equipmentRequestId String? @unique
+  equipmentRequest   EquipmentRequest? @relation(fields: [equipmentRequestId], references: [id])
+  vehicleIssueId     String? @unique
+  vehicleIssue       VehicleIssue?    @relation(fields: [vehicleIssueId], references: [id])
+  timeOffRequestId   String? @unique
+  shiftSwapRequestId String? @unique
+
+  user        User @relation("RequestActor", fields: [userId], references: [id])
+
+  attachments FileAttachment[]
+  comments    RequestComment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([kind, createdAt])
+}
+
+model RequestComment {
+  id        String       @id @default(cuid())
+  requestId String
+  authorId  String
+  body      String
+  createdAt DateTime     @default(now())
+
+  request   AdminRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Training
+// ─────────────────────────────────────────────────────────────────────
+
+model TrainingRequest {
+  id           String   @id @default(cuid())
+  userId       String
+  courseName   String
+  courseDate   DateTime?
+  hostOrg      String?
+  cost         Int?     // cents
+  justification String?
+  decision     AppDecision @default(pending)
+
+  adminRequest AdminRequest?
+  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TrainingRecord {
+  id              String   @id @default(cuid())
+  userId          String
+  course          String
+  completedAt     DateTime
+  expiresAt       DateTime?
+  hours           Int?
+  certificateFileId String?
+  certificateFile FileAttachment? @relation("TrainingCert", fields: [certificateFileId], references: [id])
+
+  user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Policies
+// ─────────────────────────────────────────────────────────────────────
+
+model PolicyDocument {
+  id          String   @id @default(cuid())
+  number      String   // e.g. "3.04"
+  title       String
+  category    String?
+  version     String
+  effectiveAt DateTime
+  fileId      String?
+  file        FileAttachment? @relation("PolicyFile", fields: [fileId], references: [id])
+  archivedAt  DateTime?
+
+  acks        PolicyAcknowledgment[]
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([number, version])
+}
+
+model PolicyAcknowledgment {
+  id        String   @id @default(cuid())
+  policyId  String
+  userId    String
+  acknowledgedAt DateTime @default(now())
+
+  policy    PolicyDocument @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([policyId, userId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Vehicles / Equipment / Events
+// ─────────────────────────────────────────────────────────────────────
+
+enum VehicleStatus {
+  inService
+  outOfService
+  inShop
+}
+
+model Vehicle {
+  id          String        @id @default(cuid())
+  unit        String        @unique
+  model       String
+  mileage     Int?
+  status      VehicleStatus @default(inService)
+  notes       String?
+  archivedAt  DateTime?
+
+  issues      VehicleIssue[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum VehicleIssuePriority {
+  low
+  medium
+  high
+}
+
+enum VehicleIssueStatus {
+  open
+  inShop
+  resolved
+}
+
+model VehicleIssue {
+  id         String              @id @default(cuid())
+  vehicleId  String
+  reportedById String
+  description String
+  priority   VehicleIssuePriority @default(medium)
+  status     VehicleIssueStatus   @default(open)
+  resolvedAt DateTime?
+  resolvedNotes String?
+
+  vehicle    Vehicle @relation(fields: [vehicleId], references: [id])
+  reportedBy User    @relation("ReportedBy", fields: [reportedById], references: [id])
+  adminRequest AdminRequest?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vehicleId])
+  @@index([status])
+}
+
+model EquipmentItem {
+  id         String   @id @default(cuid())
+  name       String
+  model      String?
+  serial     String?  @unique
+  category   String?
+  archivedAt DateTime?
+
+  assignments EquipmentAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EquipmentAssignment {
+  id           String   @id @default(cuid())
+  itemId       String
+  userId       String
+  issuedAt     DateTime @default(now())
+  returnedAt   DateTime?
+
+  item         EquipmentItem @relation(fields: [itemId], references: [id])
+  user         User          @relation("AssignedTo", fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([itemId])
+}
+
+model EquipmentRequest {
+  id            String   @id @default(cuid())
+  userId        String
+  item          String
+  reason        String
+  decision      AppDecision @default(pending)
+
+  user          User @relation("RequestedBy", fields: [userId], references: [id])
+  adminRequest  AdminRequest?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Special events
+// ─────────────────────────────────────────────────────────────────────
+
+enum EventStatus {
+  planning
+  confirmed
+  active
+  completed
+  cancelled
+}
+
+model SpecialEvent {
+  id          String      @id @default(cuid())
+  name        String
+  type        String?
+  startAt     DateTime
+  endAt       DateTime
+  location    String?
+  description String?
+  status      EventStatus @default(planning)
+  leadId      String?
+
+  posts       SpecialEventPost[]
+  attachments FileAttachment[] @relation("SpecialEventAttachments")
+
+  createdById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([startAt])
+  @@index([status])
+}
+
+model SpecialEventPost {
+  id        String   @id @default(cuid())
+  eventId   String
+  label     String
+  startAt   DateTime
+  endAt     DateTime
+  needed    Int      @default(1)
+  notes     String?
+
+  event     SpecialEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  assignments SpecialEventAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([eventId])
+}
+
+model SpecialEventAssignment {
+  id        String @id @default(cuid())
+  postId    String
+  userId    String
+  status    AssignmentStatus @default(scheduled)
+
+  post      SpecialEventPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([postId, userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Directory
+// ─────────────────────────────────────────────────────────────────────
+
+model DirectoryProfile {
+  id            String  @id @default(cuid())
+  userId        String  @unique
+  // Department-issued contact info ONLY. Never personal phone/email.
+  departmentEmail String?
+  departmentExtension String?
+  // Office/desk if any.
+  workLocation  String?
+  publicNotes   String?
+
+  user          User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  updatedAt     DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// File attachments (metadata only — bytes live elsewhere)
+// ─────────────────────────────────────────────────────────────────────
+
+enum FileClassification {
+  publicInternal
+  operational
+  personnelSensitive
+  security
+}
+
+model FileAttachment {
+  id            String   @id @default(cuid())
+  // Storage location — opaque to the app (e.g. an S3 key or VPS path).
+  storageKey    String
+  filename      String
+  mimeType      String
+  sizeBytes     Int
+  // SHA-256 hex of the bytes (for integrity / dedupe / audit).
+  checksumSha256 String
+
+  classification FileClassification @default(operational)
+  uploadedById   String
+  uploadedAt     DateTime           @default(now())
+
+  // Polymorphic-style back-references — populated only for the relevant entity.
+  policyDocs     PolicyDocument[]   @relation("PolicyFile")
+  trainingCerts  TrainingRecord[]   @relation("TrainingCert")
+  requestId      String?
+  request        AdminRequest?      @relation(fields: [requestId], references: [id])
+  specialEventId String?
+  specialEvent   SpecialEvent?      @relation("SpecialEventAttachments", fields: [specialEventId], references: [id])
+
+  uploadedBy     User @relation("UploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([uploadedById])
+  @@index([classification])
+  @@index([requestId])
+  @@index([specialEventId])
+}
