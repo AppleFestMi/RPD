@@ -337,6 +337,10 @@ model ShiftTemplate {
   endMinute   Int      // may exceed 1440 to indicate overnight
   category    String   // patrol, dispatch, reserve, command, sro, event
   archivedAt  DateTime?
+  // Back-relation for ScheduleShift.template. Required by Prisma even
+  // though we never query templates → shifts in app code today; the
+  // relation is the source-of-truth-on-template-change pattern.
+  shifts      ScheduleShift[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
