@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { validatePasswordPolicy } from "@/lib/security/password";
+// Import the runtime-agnostic core directly so the test does not pull in
+// the `server-only` directive, which throws when imported outside a
+// React Server Components context.
+import { validatePasswordPolicy } from "@/lib/security/password-core";
 
 describe("password policy", () => {
   it("accepts a sufficiently long, non-blocked password", () => {

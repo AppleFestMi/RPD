@@ -20,7 +20,10 @@
 
 import { PrismaClient } from "@prisma/client";
 import { PERMISSION_CATALOG, ROLE_PRESETS } from "../src/lib/permissions/catalog";
-import { hashPassword } from "../src/lib/security/password";
+// Import the runtime-agnostic core; seed runs under `tsx`, which does not
+// satisfy the `react-server` export condition that `server-only` relies
+// on, so importing the server-only entry would throw at module load.
+import { hashPassword } from "../src/lib/security/password-core";
 
 const prisma = new PrismaClient();
 
