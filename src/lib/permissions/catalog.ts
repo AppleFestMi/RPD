@@ -50,8 +50,16 @@ const _RAW_CATALOG = [
 
   // Policies
   { key: "policies.read",            label: "Read policies" },
-  { key: "policies.manage",          label: "Manage policies (upload/edit/version)" },
+  { key: "policies.manage",          label: "Manage policies (draft / edit / archive)" },
+  { key: "policies.publish",         label: "Publish policies" },
   { key: "policies.acknowledge",     label: "Acknowledge policies" },
+
+  // File pipeline — gated separately from per-module permissions so a
+  // future change can disable file ingest globally without touching
+  // every entity catalog.
+  { key: "files.upload",             label: "Upload files into the system" },
+  { key: "files.download",           label: "Download files from the system" },
+  { key: "files.archive",            label: "Archive a stored file (logical delete)" },
 
   // Training
   { key: "training.read.own",        label: "Read own training records" },
@@ -123,6 +131,7 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
       "announcements.acknowledge",
       "policies.read",
       "policies.acknowledge",
+      "files.download",
       "training.read.own",
       "equipment.request",
       "vehicles.reportIssue",
@@ -145,6 +154,7 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
       "announcements.acknowledge",
       "policies.read",
       "policies.acknowledge",
+      "files.download",
       "training.read.own",
       "events.read",
       "directory.read",
@@ -164,6 +174,7 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
       "announcements.acknowledge",
       "policies.read",
       "policies.acknowledge",
+      "files.download",
       "training.read.own",
       "directory.read",
     ],
@@ -190,6 +201,7 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
       "announcements.create",
       "policies.read",
       "policies.acknowledge",
+      "files.download",
       "training.read.own",
       "training.read.all",
       "equipment.request",
@@ -221,7 +233,11 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
       "announcements.manage",
       "policies.read",
       "policies.manage",
+      "policies.publish",
       "policies.acknowledge",
+      "files.upload",
+      "files.download",
+      "files.archive",
       "training.read.all",
       "training.manage",
       "equipment.manage",
@@ -246,8 +262,14 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
       "announcements.create",
       "announcements.publish",
       "announcements.manage",
+      "announcements.acknowledge",
       "policies.read",
       "policies.manage",
+      "policies.publish",
+      "policies.acknowledge",
+      "files.upload",
+      "files.download",
+      "files.archive",
       "training.read.all",
       "training.manage",
       "equipment.manage",
@@ -274,8 +296,8 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
       "audit.export",
       "directory.read",
       "announcements.read",
-      "announcements.acknowledge",
       "policies.read",
+      "files.download",
     ],
   },
 ] as const;

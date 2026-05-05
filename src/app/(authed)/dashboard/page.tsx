@@ -75,6 +75,7 @@ export default async function DashboardPage() {
     myOpenRequestCount,
     pendingRequestApprovalCount,
     announcementCandidates,
+    unackPolicies,
   ] = await Promise.all([
     prisma.scheduleAssignment.findFirst({
       where: {
@@ -132,6 +133,20 @@ export default async function DashboardPage() {
       include: { acks: { where: { userId: actor.userId }, select: { id: true } } },
       orderBy: [{ pinned: "desc" }, { publishedAt: "desc" }],
       take: 8,
+    }),
+    // Policies the actor still needs to acknowledge (published, ack-
+    // required, no ack row yet). Visibility is enforced client-side
+    // again via canSeePolicy below in case the schema gains audience
+    // scoping later.
+    prisma.policyDocument.findMany({
+      where: {
+        status: "published",
+        requiresAcknowledgment: true,
+        archivedAt: null,
+        acks: { none: { userId: actor.userId } },
+      },
+      orderBy: [{ effectiveAt: "desc" }],
+      take: 6,
     }),
   ]);
 
@@ -235,6 +250,21 @@ export default async function DashboardPage() {
           }
         >
           You won&apos;t be able to clear them by ignoring; the system tracks who has read what.
+        </AlertBanner>
+      ) : null}
+
+      {unackPolicies.length > 0 ? (
+        <AlertBanner
+          tone="warn"
+          title={`${unackPolicies.length} polic${unackPolicies.length === 1 ? "y" : "ies"} require your acknowledgment`}
+          action={
+            <Button href="/policies?filter=unack" variant="primary" size="sm">
+              Review
+            </Button>
+          }
+        >
+          Acknowledgment is recorded with the policy version. The audit trail captures who
+          read what.
         </AlertBanner>
       ) : null}
 
@@ -477,6 +507,24 @@ export default async function DashboardPage() {
                   icon={<Icon.Megaphone size={16} />}
                 />
               ) : null}
+              <QuickActionButton
+                href="/policies"
+                label="Policies"
+                description={
+                  unackPolicies.length > 0
+                    ? `${unackPolicies.length} need acknowledgment`
+                    : "SOPs and standing orders"
+                }
+                icon={<Icon.BookOpen size={16} />}
+              />
+              {can(actor, "policies.manage") ? (
+                <QuickActionButton
+                  href="/policies/new"
+                  label="Upload policy"
+                  description="New SOP or revision"
+                  icon={<Icon.FileText size={16} />}
+                />
+              ) : null}
               {canApproveRequests ? (
                 <QuickActionButton
                   href="/requests/approvals"
@@ -498,13 +546,51 @@ export default async function DashboardPage() {
 
           <DashboardPanel
             title="Policies awaiting acknowledgment"
-            meta={<Badge tone="info">Module pending</Badge>}
+            meta={
+              unackPolicies.length > 0 ? (
+                <Badge tone="warn">{unackPolicies.length}</Badge>
+              ) : null
+            }
+            viewAllHref="/policies?filter=unack"
+            viewAllLabel="Open policy library"
           >
-            <EmptyState
-              icon={<Icon.BookOpen size={20} />}
-              title="No policies on file yet"
-              description="Once the Policies module ships, you'll see the documents you need to acknowledge here."
-            />
+            {unackPolicies.length === 0 ? (
+              <EmptyState
+                icon={<Icon.BookOpen size={20} />}
+                title="No outstanding acknowledgments"
+                description="When command staff publishes a policy that requires acknowledgment, it will appear here."
+              />
+            ) : (
+              <ul className="divide-y divide-line/70">
+                {unackPolicies.slice(0, 4).map((p) => (
+                  <li key={p.id}>
+                    <Link
+                      href={`/policies/${p.id}`}
+                      className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0 hover:bg-neutral-soft/40"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-mono text-[11px] uppercase tracking-wider text-text3">
+                          {p.number} · v{p.version}
+                        </div>
+                        <div className="mt-0.5 truncate text-[13.5px] font-medium tracking-tight text-ink">
+                          {p.title}
+                        </div>
+                        <div className="text-[11.5px] text-text3">
+                          {p.category ? `${p.category} · ` : ""}effective{" "}
+                          {p.effectiveAt.toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </div>
+                      </div>
+                      <Badge tone="warn" dot>
+                        Action required
+                      </Badge>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
           </DashboardPanel>
 
           <DashboardPanel

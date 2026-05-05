@@ -107,9 +107,13 @@ export const EVENTS = {
   ANNOUNCEMENT_ACK_VIEWED:       "announcement.acknowledgment.viewed",
 
   // Policies
+  POLICY_CREATED:                "policy.created",
+  POLICY_UPDATED:                "policy.updated",
   POLICY_UPLOADED:               "policy.uploaded",
   POLICY_PUBLISHED:              "policy.published",
+  POLICY_ARCHIVED:               "policy.archived",
   POLICY_ACK:                    "policy.acknowledged",
+  POLICY_ACK_VIEWED:             "policy.acknowledgment.viewed",
 
   // Training
   TRAINING_RECORD_CREATED:       "training.record.created",
@@ -135,10 +139,15 @@ export const EVENTS = {
   EVENT_UPDATED:                 "event.updated",
   EVENT_STAFFING_ASSIGNED:       "event.staffing.assigned",
 
-  // Attachments
+  // Attachments / files (file.* are the canonical events emitted by
+  // the file pipeline; attachment.* are kept for backwards compat)
   ATTACHMENT_UPLOADED:           "attachment.uploaded",
   ATTACHMENT_DOWNLOADED:         "attachment.downloaded",
   ATTACHMENT_DELETED:            "attachment.deleted",
+  FILE_UPLOADED:                 "file.uploaded",
+  FILE_UPLOAD_REJECTED:          "file.upload.rejected",
+  FILE_DOWNLOADED:               "file.downloaded",
+  FILE_ARCHIVED:                 "file.archived",
 
   // Audit / settings
   AUDIT_VIEWED:                  "audit.viewed",

@@ -744,6 +744,12 @@ model TrainingRecord {
 // Policies
 // ─────────────────────────────────────────────────────────────────────
 
+enum PolicyStatus {
+  draft
+  published
+  archived
+}
+
 model PolicyDocument {
   id          String          @id @default(cuid())
   number      String // e.g. "3.04"
@@ -751,9 +757,19 @@ model PolicyDocument {
   category    String?
   version     String
   effectiveAt DateTime
+  reviewDate  DateTime?
+  summary     String?
+  status      PolicyStatus    @default(draft)
+  requiresAcknowledgment Boolean @default(true)
   fileId      String?
   file        FileAttachment? @relation("PolicyFile", fields: [fileId], references: [id])
-  archivedAt  DateTime?
+
+  // Lifecycle tracking
+  publishedAt   DateTime?
+  publishedById String?
+  archivedAt    DateTime?
+  archivedById  String?
+  updatedById   String?
 
   acks PolicyAcknowledgment[]
 
@@ -762,12 +778,16 @@ model PolicyDocument {
   updatedAt   DateTime @updatedAt
 
   @@unique([number, version])
+  @@index([status, publishedAt])
 }
 
 model PolicyAcknowledgment {
   id             String   @id @default(cuid())
   policyId       String
   userId         String
+  // Snapshot the version string at acknowledgment time so a later
+  // policy revision doesn't silently invalidate a recorded ack.
+  policyVersion  String?
   acknowledgedAt DateTime @default(now())
 
   policy PolicyDocument @relation(fields: [policyId], references: [id], onDelete: Cascade)
@@ -973,10 +993,28 @@ enum FileClassification {
   security
 }
 
+// Functional kind of a stored file, used by the upload pipeline to gate
+// MIME allowlists and entity-permission checks. Distinct from
+// FileClassification, which captures sensitivity tier per
+// docs/SECURITY_MODEL.md.
+enum FileKind {
+  administrative
+  policy
+  training
+  vehicle
+  equipment
+  announcement
+}
+
 model FileAttachment {
   id             String @id @default(cuid())
-  // Storage location — opaque to the app (e.g. an S3 key or VPS path).
+  // Storage location — opaque to the app (relative path under
+  // FILE_STORAGE_ROOT). Never returned to the client; downloads stream
+  // through /api/files/[id]/download with permission checks.
   storageKey     String
+  // The original filename, sanitized for display. Storage uses the
+  // random storageKey; this is what the user sees and what is sent in
+  // Content-Disposition on download.
   filename       String
   mimeType       String
   sizeBytes      Int
@@ -984,8 +1022,13 @@ model FileAttachment {
   checksumSha256 String
 
   classification FileClassification @default(operational)
+  kind           FileKind?
   uploadedById   String
   uploadedAt     DateTime           @default(now())
+
+  // Logical archive (no hard delete in MVP).
+  archivedAt   DateTime?
+  archivedById String?
 
   // Polymorphic-style back-references — populated only for the relevant entity.
   policyDocs     PolicyDocument[] @relation("PolicyFile")
