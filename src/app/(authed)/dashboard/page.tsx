@@ -304,7 +304,7 @@ export default async function DashboardPage() {
                 : "Nothing pending"
             }
             trailing={<Icon.Inbox size={18} />}
-            tone={pendingRequestApprovalCount + pendingPickups > 0 ? "pending" : "neutral"}
+            tone={pendingRequestApprovalCount + pendingPickups > 0 ? "warn" : "neutral"}
           />
         ) : (
           <StatCard

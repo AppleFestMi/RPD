@@ -59,6 +59,19 @@ export function canActorDecide(input: {
     return { ok: false, error: "You do not have approval permission." };
   }
 
+  // "complete" is the post-approval handoff — its only legal predecessor
+  // is `approved`, so it must be checked BEFORE the open-state guard
+  // below (which would otherwise reject every complete attempt as
+  // "already decided"). The status stays at `approved`; completion is
+  // tracked via REQUEST_COMPLETED in the audit log.
+  if (input.decision === "complete") {
+    if (input.currentStatus !== "approved") {
+      return { ok: false, error: "Only approved requests can be marked completed." };
+    }
+    return { ok: true, next: "approved" };
+  }
+
+  // Approve / deny / needsInfo all require the request to still be open.
   if (
     input.currentStatus === "approved" ||
     input.currentStatus === "denied" ||
@@ -80,16 +93,6 @@ export function canActorDecide(input: {
       return { ok: true, next: "denied" };
     case "needsInfo":
       return { ok: true, next: "needsMoreInfo" };
-    case "complete": {
-      // "Completed" is only allowed from approved.
-      if (input.currentStatus !== "approved") {
-        return {
-          ok: false,
-          error: "Only approved requests can be marked completed.",
-        };
-      }
-      return { ok: true, next: "approved" };
-    }
   }
 }
 

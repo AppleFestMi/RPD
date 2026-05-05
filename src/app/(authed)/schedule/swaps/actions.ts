@@ -179,7 +179,9 @@ export async function approveSwap(input: z.infer<typeof REVIEW>) {
     include: { shift: true },
   });
 
-  const overlap = findSwapReplacementOverlap({
+  // exactOptionalPropertyTypes: omit `ignoreShiftId` rather than passing
+  // `undefined`, since the helper's signature is `ignoreShiftId?: string`.
+  const overlapInput = {
     replacementUserId: swap.toUserId,
     originalShift: {
       id: fromShift.id,
@@ -199,8 +201,9 @@ export async function approveSwap(input: z.infer<typeof REVIEW>) {
         status: a.shift.status,
       },
     })),
-    ignoreShiftId: swap.toShiftId ?? undefined,
-  });
+    ...(swap.toShiftId ? { ignoreShiftId: swap.toShiftId } : {}),
+  };
+  const overlap = findSwapReplacementOverlap(overlapInput);
   if (overlap.length > 0) {
     return { ok: false as const, error: "Replacement user has a conflicting assignment." };
   }

@@ -72,7 +72,12 @@ export function SidebarNav({
 
         <nav className="flex-1 overflow-y-auto py-2">
           {Array.from(grouped.entries()).map(([group, items]) => (
-            <NavGroup key={group} label={group} items={items} onPick={onClose} />
+            <NavGroup
+              key={group}
+              label={group}
+              items={items}
+              {...(onClose ? { onPick: onClose } : {})}
+            />
           ))}
         </nav>
 
@@ -102,7 +107,7 @@ function NavGroup({
       </div>
       <ul className="space-y-0.5 px-2">
         {items.map((l) => (
-          <NavItem key={l.href} {...l} onPick={onPick} />
+          <NavItem key={l.href} {...l} {...(onPick ? { onPick } : {})} />
         ))}
       </ul>
     </div>
@@ -126,7 +131,7 @@ function NavItem({
     <li>
       <Link
         href={href}
-        onClick={onPick}
+        {...(onPick ? { onClick: onPick } : {})}
         className={
           "group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] " +
           (active

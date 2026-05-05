@@ -48,7 +48,16 @@ export async function createOpenShift(input: z.infer<typeof CREATE>) {
   const parsed = CREATE.parse(input);
   const v = validateNotes(parsed.notes);
   if (!v.ok) return { ok: false as const, error: notesErrorMessage(v)! };
-  if (validateShiftTimes(parsed)) return { ok: false as const, error: "End must be after start." };
+  // Build the call without a `shiftId: undefined` slot, since the
+  // helper's signature is `shiftId?: string` under
+  // exactOptionalPropertyTypes (no `| undefined`).
+  const timesInput =
+    parsed.shiftId !== undefined
+      ? { startMinute: parsed.startMinute, endMinute: parsed.endMinute, shiftId: parsed.shiftId }
+      : { startMinute: parsed.startMinute, endMinute: parsed.endMinute };
+  if (validateShiftTimes(timesInput)) {
+    return { ok: false as const, error: "End must be after start." };
+  }
 
   const closesAt = parsed.closesAt ? new Date(parsed.closesAt) : null;
   if (closesAt && isNaN(closesAt.getTime())) {
