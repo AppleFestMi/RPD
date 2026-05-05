@@ -22,6 +22,7 @@
  * Each placeholder card explicitly says "module pending" and links to
  * the corresponding Coming Soon page so it's not misleading.
  */
+import Link from "next/link";
 import { headers } from "next/headers";
 import { requireActor } from "@/lib/auth/session";
 import { can } from "@/lib/permissions/check";
@@ -29,12 +30,19 @@ import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit/audit";
 import { EVENTS } from "@/lib/audit/events";
 import { addDays, formatRange, isoDay, startOfWeek } from "@/lib/schedule/time";
+import { canSeeAnnouncement } from "@/lib/announcements/policy";
+import type {
+  AnnouncementPriority,
+  AnnouncementStatus,
+  AudienceScope,
+} from "@/lib/announcements/types";
 
 import { HeroCard } from "@/components/dashboard/HeroCard";
 import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { AlertBanner } from "@/components/ui/AlertBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { QuickActionButton } from "@/components/ui/QuickActionButton";
 import { Icon } from "@/components/ui/Icons";
@@ -66,6 +74,7 @@ export default async function DashboardPage() {
     user,
     myOpenRequestCount,
     pendingRequestApprovalCount,
+    announcementCandidates,
   ] = await Promise.all([
     prisma.scheduleAssignment.findFirst({
       where: {
@@ -113,7 +122,50 @@ export default async function DashboardPage() {
           },
         })
       : Promise.resolve(0),
+    // Latest published, audience-visible, non-expired announcements.
+    // Visibility is filtered in app code post-fetch via canSeeAnnouncement.
+    prisma.announcement.findMany({
+      where: {
+        status: "published",
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+      include: { acks: { where: { userId: actor.userId }, select: { id: true } } },
+      orderBy: [{ pinned: "desc" }, { publishedAt: "desc" }],
+      take: 8,
+    }),
   ]);
+
+  // Filter announcements by audience visibility in app code (the SQL
+  // can't express the actor's roleKeys cleanly without a join). The
+  // batch is small enough that this is cheap.
+  const visibleAnnouncements = announcementCandidates
+    .filter((a) =>
+      canSeeAnnouncement(
+        { permissionKeys: actor.permissionKeys, roleKeys: actor.roleKeys },
+        {
+          status: a.status as AnnouncementStatus,
+          audience: a.audience as AudienceScope,
+          publishedAt: a.publishedAt,
+          expiresAt: a.expiresAt,
+          archivedAt: a.archivedAt,
+        },
+        now,
+      ),
+    )
+    .map((a) => ({
+      id: a.id,
+      title: a.title,
+      category: a.category,
+      pinned: a.pinned,
+      priority: a.priority as AnnouncementPriority,
+      requiresAcknowledgment: a.requiresAcknowledgment,
+      publishedAt: a.publishedAt,
+      acks: a.acks,
+    }));
+
+  const unacknowledgedAnnouncementCount = visibleAnnouncements.filter(
+    (a) => a.requiresAcknowledgment && a.acks.length === 0,
+  ).length;
 
   // The dashboard view is itself an audit-relevant event (admin surface
   // visibility). We log it once per render with the surface name and
@@ -169,6 +221,22 @@ export default async function DashboardPage() {
           </>
         }
       />
+
+      {unacknowledgedAnnouncementCount > 0 ? (
+        <AlertBanner
+          tone="warn"
+          title={`${unacknowledgedAnnouncementCount} announcement${
+            unacknowledgedAnnouncementCount === 1 ? "" : "s"
+          } awaiting your acknowledgment`}
+          action={
+            <Button href="/announcements?filter=unack" variant="primary" size="sm">
+              Review
+            </Button>
+          }
+        >
+          You won&apos;t be able to clear them by ignoring; the system tracks who has read what.
+        </AlertBanner>
+      ) : null}
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
@@ -269,15 +337,60 @@ export default async function DashboardPage() {
 
           <DashboardPanel
             title="Today's briefing"
-            meta={<Badge tone="info">Module pending</Badge>}
+            meta={
+              visibleAnnouncements.length > 0 ? (
+                <Badge tone="info">{visibleAnnouncements.length}</Badge>
+              ) : null
+            }
             viewAllHref="/announcements"
             viewAllLabel="Open announcements"
           >
-            <EmptyState
-              icon={<Icon.Bell size={20} />}
-              title="Briefings are not yet wired in"
-              description="Once the Announcements module ships, supervisors will publish daily briefings here. Until then, treat shift roll-call as the source of truth."
-            />
+            {visibleAnnouncements.length === 0 ? (
+              <EmptyState
+                icon={<Icon.Bell size={20} />}
+                title="No announcements right now"
+                description="Briefings, policy reminders, and training notices appear here as supervisors and command staff publish them."
+              />
+            ) : (
+              <ul className="divide-y divide-line/70">
+                {visibleAnnouncements.slice(0, 4).map((a) => (
+                  <li key={a.id}>
+                    <Link
+                      href={`/announcements/${a.id}`}
+                      className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0 hover:bg-neutral-soft/40"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {a.pinned ? <Badge tone="info">Pinned</Badge> : null}
+                          {a.priority !== "normal" ? (
+                            <Badge tone={a.priority === "urgent" ? "danger" : "warn"}>
+                              {a.priority === "urgent" ? "Urgent" : "Important"}
+                            </Badge>
+                          ) : null}
+                          {a.requiresAcknowledgment && a.acks.length === 0 ? (
+                            <Badge tone="warn" dot>
+                              Needs ack
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <div className="mt-1 truncate text-[13.5px] font-semibold tracking-tight text-ink">
+                          {a.title}
+                        </div>
+                        <div className="text-[11.5px] text-text3">
+                          {a.category ? `${a.category} · ` : ""}
+                          {a.publishedAt
+                            ? a.publishedAt.toLocaleDateString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                              })
+                            : ""}
+                        </div>
+                      </div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
           </DashboardPanel>
 
           <DashboardPanel
@@ -346,6 +459,24 @@ export default async function DashboardPage() {
                 description={`${myOpenRequestCount} open`}
                 icon={<Icon.Inbox size={16} />}
               />
+              <QuickActionButton
+                href="/announcements"
+                label="Announcements"
+                description={
+                  unacknowledgedAnnouncementCount > 0
+                    ? `${unacknowledgedAnnouncementCount} need acknowledgment`
+                    : "Briefings & policy notices"
+                }
+                icon={<Icon.Bell size={16} />}
+              />
+              {can(actor, "announcements.create") ? (
+                <QuickActionButton
+                  href="/announcements/new"
+                  label="Post announcement"
+                  description="Briefing, policy reminder, etc."
+                  icon={<Icon.Megaphone size={16} />}
+                />
+              ) : null}
               {canApproveRequests ? (
                 <QuickActionButton
                   href="/requests/approvals"

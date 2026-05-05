@@ -267,33 +267,72 @@ model DepartmentSetting {
 // Announcements
 // ─────────────────────────────────────────────────────────────────────
 
+// AudienceScope — who an announcement targets. The set is intentionally
+// small; the UI maps these onto the role catalog. `sworn` and `admin` were
+// added with the Announcements module; `patrol` and `dispatch` remain for
+// backwards-compatibility with any pre-existing rows.
 enum AudienceScope {
   all
+  sworn
   patrol
   reserves
-  command
   dispatch
   supervisorsOnly
+  command
+  admin
 }
 
+enum AnnouncementStatus {
+  draft
+  published
+  archived
+}
+
+enum AnnouncementPriority {
+  normal
+  important
+  urgent
+}
+
+// Free-text category lives here so adding a new category doesn't require
+// a migration. The UI offers a fixed list (General, Shift Briefing,
+// Training Notice, Policy Update, Schedule Notice, Equipment / Vehicle
+// Notice, Special Event, Administrative); the column is just a string.
+
 model Announcement {
-  id          String        @id @default(cuid())
-  title       String
-  body        String
-  category    String?
-  authorId    String
-  audience    AudienceScope @default(all)
-  pinned      Boolean       @default(false)
+  id                     String               @id @default(cuid())
+  title                  String
+  body                   String
+  category               String?
+  authorId               String
+  audience               AudienceScope        @default(all)
+  priority               AnnouncementPriority @default(normal)
+  status                 AnnouncementStatus   @default(draft)
+  pinned                 Boolean              @default(false)
+  requiresAcknowledgment Boolean              @default(false)
+
+  // Lifecycle timestamps. publishAt is a future-publish hint (not yet
+  // automated — a publisher still has to flip the status); kept so the UI
+  // can show the "scheduled publish" intent and a future cron job can
+  // promote drafts.
+  publishAt   DateTime?
   publishedAt DateTime?
+  publishedById String?
+  expiresAt   DateTime?
   archivedAt  DateTime?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  archivedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  updatedById String?
 
   author User                         @relation("AnnouncementAuthor", fields: [authorId], references: [id])
   acks   AnnouncementAcknowledgment[]
 
-  @@index([publishedAt])
+  @@index([status, publishedAt])
   @@index([audience])
+  @@index([pinned, publishedAt])
+  @@index([expiresAt])
 }
 
 model AnnouncementAcknowledgment {

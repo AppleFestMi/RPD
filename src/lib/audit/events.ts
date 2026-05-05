@@ -99,8 +99,12 @@ export const EVENTS = {
 
   // Announcements
   ANNOUNCEMENT_CREATED:          "announcement.created",
+  ANNOUNCEMENT_UPDATED:          "announcement.updated",
   ANNOUNCEMENT_PUBLISHED:        "announcement.published",
+  ANNOUNCEMENT_UNPUBLISHED:      "announcement.unpublished",
+  ANNOUNCEMENT_ARCHIVED:         "announcement.archived",
   ANNOUNCEMENT_ACK:              "announcement.acknowledged",
+  ANNOUNCEMENT_ACK_VIEWED:       "announcement.acknowledgment.viewed",
 
   // Policies
   POLICY_UPLOADED:               "policy.uploaded",

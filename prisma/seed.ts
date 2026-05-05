@@ -97,6 +97,13 @@ async function main() {
     });
   }
 
+  // Optional: announcement fixture. Set SEED_ANNOUNCEMENTS=1 to run.
+  // Idempotent on (title, status) — prior fictional posts are removed
+  // before re-creation. Never run in production.
+  if (process.env.SEED_ANNOUNCEMENTS === "1") {
+    await seedAnnouncementsFixture(admin.id);
+  }
+
   // Optional: schedule fixture for development. Set SEED_SCHEDULE=1 to run.
   // Idempotent within a week — wipes existing draft shifts in the seeded
   // window before re-creating. Never run in production.
@@ -238,6 +245,92 @@ async function seedScheduleFixture(adminUserId: string) {
       { userId: adminUserId, date: day(4), startMinute: 17 * 60, endMinute: 23 * 60, state: "preferred", notes: "Friday detail" },
       { userId: adminUserId, date: day(5), startMinute: 17 * 60, endMinute: 23 * 60, state: "available" },
       { userId: adminUserId, date: day(6), startMinute: 0, endMinute: 23 * 60, state: "unavailable" },
+    ],
+  });
+}
+
+/**
+ * Announcement fixture: 5 fictional administrative posts. No sensitive
+ * police data — all content is the kind a supervisor would post about
+ * scheduling, training, and policy.
+ */
+async function seedAnnouncementsFixture(adminUserId: string) {
+  console.warn("Seeding fictional announcements...");
+
+  // Idempotent — wipe any prior seeded rows by the bootstrap admin
+  // before re-creating. Real announcements (with a different authorId)
+  // are never touched.
+  await prisma.announcementAcknowledgment.deleteMany({
+    where: { announcement: { authorId: adminUserId } },
+  });
+  await prisma.announcement.deleteMany({ where: { authorId: adminUserId } });
+
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const lastWeek = new Date(now);
+  lastWeek.setDate(now.getDate() - 7);
+
+  await prisma.announcement.createMany({
+    data: [
+      {
+        authorId: adminUserId,
+        title: "Range qualification — June 9 through 11",
+        body: "Annual firearms qualification will run on the range June 9–11. Sign-up is open in the Training module. Bring duty rig and ear/eye pro. All sworn officers must complete by June 30.",
+        category: "Training Notice",
+        audience: "sworn",
+        priority: "important",
+        status: "published",
+        publishedAt: yesterday,
+        publishedById: adminUserId,
+        pinned: true,
+        requiresAcknowledgment: true,
+      },
+      {
+        authorId: adminUserId,
+        title: "Updated uniform standards (Section 3.4) effective May 15",
+        body: "Off-duty uniform standards have been revised. Review Section 3.4 and acknowledge in the Policies module. Acknowledgment is required by May 14.",
+        category: "Policy Update",
+        audience: "all",
+        priority: "important",
+        status: "published",
+        publishedAt: lastWeek,
+        publishedById: adminUserId,
+        requiresAcknowledgment: true,
+      },
+      {
+        authorId: adminUserId,
+        title: "Reserve unit BBQ — May 25",
+        body: "Annual reserve cookout at City Park, Pavilion B. Family welcome. RSVP via Secretary Bennett.",
+        category: "Special Event",
+        audience: "reserves",
+        priority: "normal",
+        status: "published",
+        publishedAt: lastWeek,
+        publishedById: adminUserId,
+      },
+      {
+        authorId: adminUserId,
+        title: "Schedule publish moved to Wednesdays",
+        body: "Starting next week the weekly schedule will be published Wednesdays at 16:00 instead of Thursdays. Open-shift posts will follow the same cadence.",
+        category: "Schedule Notice",
+        audience: "sworn",
+        priority: "normal",
+        status: "published",
+        publishedAt: yesterday,
+        publishedById: adminUserId,
+      },
+      {
+        authorId: adminUserId,
+        title: "Coffee maker in briefing room — replacement on order",
+        body: "The briefing-room coffee maker is officially deceased. A replacement has been ordered through Supplies and will arrive within the week. Use the dispatch break room until then.",
+        category: "Administrative",
+        audience: "all",
+        priority: "normal",
+        status: "published",
+        publishedAt: yesterday,
+        publishedById: adminUserId,
+      },
     ],
   });
 }
