@@ -83,6 +83,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
 
       <AuditClient
         filter={filter}
+        canExport={actor.permissionKeys.includes("audit.export")}
         rows={rows.map((r) => ({
           id: r.id,
           createdAt: r.createdAt.toISOString(),

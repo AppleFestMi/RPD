@@ -1,8 +1,5 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { requestAuditExport } from "./actions";
-
 type Filter = {
   from?: string | undefined;
   to?: string | undefined;
@@ -32,19 +29,20 @@ type Row = {
 
 export function AuditClient({
   filter,
+  canExport,
   rows,
   total,
   page,
   totalPages,
 }: {
   filter: Filter;
+  canExport: boolean;
   rows: Row[];
   total: number;
   page: number;
   totalPages: number;
 }) {
-  const [exportPending, startExport] = useTransition();
-  const [exportNote, setExportNote] = useState<string | null>(null);
+  const exportHref = canExport ? `/api/admin/audit/export?${filterToQuery(filter)}` : null;
 
   return (
     <>
@@ -77,41 +75,17 @@ export function AuditClient({
           <span className="ml-auto text-sm text-text3">
             {total} match{total === 1 ? "" : "es"}
           </span>
-          <button
-            type="button"
-            disabled={exportPending}
-            onClick={() =>
-              startExport(async () => {
-                setExportNote(null);
-                try {
-                  const r = await requestAuditExport({
-                    from: filter.from ?? undefined,
-                    to: filter.to ?? undefined,
-                    eventType: filter.eventType ?? undefined,
-                    result: filter.result ?? undefined,
-                    actorUserId: filter.actorUserId ?? undefined,
-                    entityType: filter.entityType ?? undefined,
-                  });
-                  if (!r.ok) {
-                    setExportNote(`Export failed: ${r.error}`);
-                    return;
-                  }
-                  setExportNote(`Export requested for ${r.rowCount} rows. (CSV streaming is not yet implemented; the request is audit-logged.)`);
-                } catch (e) {
-                  setExportNote(`Export not allowed (${(e as Error).message}). Permission denied is audit-logged.`);
-                }
-              })
-            }
-            className="rounded-md border border-line bg-white px-3 py-2 text-sm hover:bg-neutral-soft disabled:opacity-60"
-          >
-            {exportPending ? "Requesting…" : "Export…"}
-          </button>
+          {exportHref ? (
+            <a
+              href={exportHref}
+              className="rounded-md border border-line bg-white px-3 py-2 text-sm hover:bg-neutral-soft"
+              title="Download a CSV of the rows matching the current filters."
+            >
+              Export CSV
+            </a>
+          ) : null}
         </div>
       </form>
-
-      {exportNote ? (
-        <p className="mt-2 rounded-md bg-warn-soft/40 p-2 text-[12px] text-text2">{exportNote}</p>
-      ) : null}
 
       <div className="mt-4 overflow-x-auto rounded-lg border border-line bg-white">
         <table className="w-full text-[12.5px]">
@@ -242,6 +216,14 @@ function Field({
       />
     </label>
   );
+}
+
+function filterToQuery(filter: Filter): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(filter)) {
+    if (typeof v === "string" && v.length > 0) p.set(k, v);
+  }
+  return p.toString();
 }
 
 function fmtLocal(iso?: string): string | undefined {
